@@ -36,6 +36,7 @@ library
   default-extensions:
       RecordWildCards
       OverloadedStrings
+      ScopedTypeVariables
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       async
@@ -54,11 +55,13 @@ executable zdun-exe
   default-extensions:
       RecordWildCards
       OverloadedStrings
+      ScopedTypeVariables
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       async
     , base >=4.7 && <5
     , optparse-applicative
+    , split
     , unix
     , zdun
   default-language: Haskell2010
@@ -75,6 +78,7 @@ test-suite zdun-test
   default-extensions:
       RecordWildCards
       OverloadedStrings
+      ScopedTypeVariables
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5

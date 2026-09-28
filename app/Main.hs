@@ -2,11 +2,12 @@ module Main (main) where
 
 import Control.Applicative (many, (<**>))
 import Control.Concurrent.Async (forConcurrently_)
+import Data.List.Split (splitOn)
 import Data.Version (showVersion)
 import Lib (parseDuration)
 import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, help, helper, info, infoOption, long, metavar, option, progDesc, short, showDefault, strArgument, strOption, value)
 import Paths_zdun (version)
-import Probes (isPortOpen)
+import Probes (isPortOpen, worker)
 import System.Exit (exitFailure)
 import System.Posix.Process (executeFile)
 
@@ -50,5 +51,7 @@ main = do
       exitFailure
     (cmd : args) -> do
       -- wait here
-      forConcurrently_ (optTcp options) (\_ -> isPortOpen "" "" 0)
+      forConcurrently_ (optTcp options) (\tcp -> worker (isPortOpen "ya.ru" "801" (optTimeout options)) (optTimeout options))
       executeFile cmd True args Nothing
+
+--  ()  
