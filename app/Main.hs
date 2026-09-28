@@ -1,6 +1,6 @@
 module Main (main) where
 
-import Control.Applicative (many, (<**>))
+import Control.Applicative (some, many, (<**>))
 import Control.Concurrent.Async (mapConcurrently)
 import Data.Version (showVersion)
 import Lib (parseDuration)
@@ -38,7 +38,7 @@ opts =
   Options
     <$> option durationParser (short 't' <> value 0 <> showDefault <> help "Timeout")
     <*> many (strOption (long "tcp" <> help "TCP connection check"))
-    <*> many (strArgument (metavar "ARGS..."))
+    <*> some (strArgument (metavar "--- CMD"))
 
 durationParser :: ReadM Int
 durationParser = eitherReader parseDuration
