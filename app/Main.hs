@@ -1,30 +1,31 @@
 module Main (main) where
 
 import Control.Applicative (many, (<**>))
-import Control.Concurrent (threadDelay, forConcurrently_)
+import Control.Concurrent.Async (forConcurrently_)
 import Data.Version (showVersion)
 import Lib (parseDuration)
-import Probes (isPortOpen)
-import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, help, helper, info, infoOption, long, metavar, option, progDesc, short, showDefault, strArgument, value)
+import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, help, helper, info, infoOption, long, metavar, option, progDesc, short, showDefault, strArgument, strOption, value)
 import Paths_zdun (version)
+import Probes (isPortOpen)
 import System.Exit (exitFailure)
 import System.Posix.Process (executeFile)
 
 data Options = Options
   { optTimeout :: Int,
+    optTcp :: [String],
     optRest :: [String]
   }
 
 optsInfo :: ParserInfo Options
 optsInfo =
   info
-    ( helper
+    ( opts
+        <**> helper
         <**> infoOption
           (showVersion version)
           ( long "version"
               <> help "Show version information"
           )
-        <**> opts
     )
     ( fullDesc
         <> progDesc "Zdun - utility to exec a command after waiting for rediness probes to success or timeout"
@@ -34,6 +35,7 @@ opts :: Parser Options
 opts =
   Options
     <$> option durationParser (short 't' <> value 0 <> showDefault <> help "Timeout")
+    <*> many (strOption (long "tcp" <> help "TCP connection check"))
     <*> many (strArgument (metavar "ARGS..."))
 
 durationParser :: ReadM Int
@@ -48,5 +50,5 @@ main = do
       exitFailure
     (cmd : args) -> do
       -- wait here
-      forConcurrently_ [] isPortOpen "" "" 0
+      forConcurrently_ (optTcp options) (\_ -> isPortOpen "" "" 0)
       executeFile cmd True args Nothing

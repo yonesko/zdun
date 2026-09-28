@@ -1,0 +1,6 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: "zdun:lib"
+    - path: "./app"
+      component: "zdun:exe:zdun-exe"
