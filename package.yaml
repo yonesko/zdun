@@ -39,6 +39,8 @@ default-extensions:
 
 library:
   source-dirs: src
+  dependencies:
+    - network
 
 executables:
   zdun-exe:
@@ -52,6 +54,7 @@ executables:
     - zdun
     - optparse-applicative
     - unix
+    - async
 
 tests:
   zdun-test:

@@ -1,5 +1,5 @@
 module Lib
-  ( someFunc,
+  ( 
     parseDuration,
   )
 where
@@ -8,8 +8,6 @@ import Data.Char (isDigit)
 import Data.Maybe (listToMaybe)
 import Text.Read (readMaybe)
 
-someFunc :: IO ()
-someFunc = putStrLn "someFunc"
 
 -- Parse value like 1s or 5m or 5m1s
 parseDuration :: String -> Either String Int

@@ -1,8 +1,10 @@
 module Main (main) where
 
 import Control.Applicative (many, (<**>))
+import Control.Concurrent (threadDelay, forConcurrently_)
 import Data.Version (showVersion)
 import Lib (parseDuration)
+import Probes (isPortOpen)
 import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, help, helper, info, infoOption, long, metavar, option, progDesc, short, showDefault, strArgument, value)
 import Paths_zdun (version)
 import System.Exit (exitFailure)
@@ -16,13 +18,13 @@ data Options = Options
 optsInfo :: ParserInfo Options
 optsInfo =
   info
-    ( opts
-        <**> helper
+    ( helper
         <**> infoOption
           (showVersion version)
           ( long "version"
               <> help "Show version information"
           )
+        <**> opts
     )
     ( fullDesc
         <> progDesc "Zdun - utility to exec a command after waiting for rediness probes to success or timeout"
@@ -45,4 +47,6 @@ main = do
       putStrLn "zdun: не указана команда для выполнения после --"
       exitFailure
     (cmd : args) -> do
+      -- wait here
+      forConcurrently_ [] isPortOpen "" "" 0
       executeFile cmd True args Nothing
