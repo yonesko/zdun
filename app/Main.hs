@@ -2,8 +2,8 @@ module Main (main) where
 
 import Control.Applicative (many, (<**>))
 import Data.Version (showVersion)
-import Lib (someFunc)
-import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, header, help, helper, info, infoOption, long, metavar, option, progDesc, short, strArgument)
+import Lib (parseDuration)
+import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, help, helper, info, infoOption, long, metavar, option, progDesc, short, strArgument)
 import Paths_zdun (version)
 
 data Options = Options
@@ -33,7 +33,7 @@ opts =
     <*> many (strArgument (metavar "ARGS..."))
 
 durationParser :: ReadM Int
-durationParser = eitherReader (\str -> Right 777)
+durationParser = eitherReader parseDuration
 
 main :: IO ()
 main = do
@@ -42,4 +42,4 @@ main = do
   let arguments = optRest options
   putStrLn $ "Полученные аргументы после -- или позиционные: " ++ show arguments
 
-  someFunc
+  
