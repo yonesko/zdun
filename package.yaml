@@ -51,6 +51,7 @@ executables:
     dependencies:
     - zdun
     - optparse-applicative
+    - unix
 
 tests:
   zdun-test:

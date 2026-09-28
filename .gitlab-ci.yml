@@ -1,5 +1,27 @@
 stages:
+  - test
   - build
+
+test:
+  stage: test
+  image: alpine:3.19
+  before_script:
+    - apk update
+    - apk add --no-cache ghc cabal gcc musl-dev gmp-dev zlib-dev zlib-static libffi-dev make xz tar git
+    - cabal user-config init
+    - 'echo "repository hackage.haskell.org" >> ~/.config/cabal/config'
+    - 'echo "  url: http://hackage.haskell.org/" >> ~/.config/cabal/config'
+    - 'echo "  secure: False" >> ~/.config/cabal/config'
+    - cabal update
+  script:
+    - cabal build --only-dependencies --enable-tests
+    - cabal test --test-show-details=direct
+  cache:
+    key: cabal-${CI_COMMIT_REF_SLUG}
+    paths:
+      - dist-newstyle/
+      - /root/.local/state/cabal/store/
+      - /root/.cabal/packages/
 
 variables:
   EXE_NAME: zdun-exe
