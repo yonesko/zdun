@@ -27,6 +27,7 @@ library
   exposed-modules:
       Lib
       Probes
+      Tcp
   other-modules:
       Paths_zdun
   autogen-modules:

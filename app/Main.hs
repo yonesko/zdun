@@ -1,15 +1,16 @@
 module Main (main) where
 
 import Control.Applicative (many, (<**>))
-import Control.Concurrent.Async (forConcurrently_, mapConcurrently)
+import Control.Concurrent.Async (mapConcurrently)
 import Data.Version (showVersion)
 import Lib (parseDuration)
 import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, help, helper, info, infoOption, long, metavar, option, progDesc, short, showDefault, strArgument, strOption, value)
 import Paths_zdun (version)
-import Probes (isPortOpen, worker)
+import Probes (worker)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 import System.Posix.Process (executeFile)
+import Tcp (isPortOpen)
 
 data Options = Options
   { optTimeout :: Int,
