@@ -1,6 +1,6 @@
 module Main (main) where
 
-import Control.Applicative (some, many, (<**>))
+import Control.Applicative (many, some, (<**>))
 import Control.Concurrent.Async (mapConcurrently)
 import Data.Version (showVersion)
 import Lib (parseDuration)
@@ -53,6 +53,7 @@ main = do
     (cmd : args) -> do
       checkResults <- mapConcurrently (\tcp -> worker (isPortOpen tcp) (optTimeout options)) (optTcp options)
       if elem False checkResults
-        then
-          hPutStrLn stderr $ "[zdun]: Some checks failed"
+        then do
+          let failedChecks = map fst (filter (not . snd) (zip (optTcp options) checkResults))
+          hPutStrLn stderr $ "[zdun]: Some checks failed: " ++ unwords failedChecks
         else executeFile cmd True args Nothing
