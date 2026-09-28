@@ -21,10 +21,10 @@ seconds n = n * 1000000
 minutes n = n * seconds 60
 milliseconds n = n * 1000
 
-isPortOpen :: HostName -> ServiceName -> Int -> IO Bool
-isPortOpen host port timeoutUs = do
+isPortOpen :: HostName -> ServiceName  -> IO Bool
+isPortOpen host port = do
   -- Оборачиваем ВСЮ операцию целиком в таймаут:
-  res <- timeout timeoutUs check
+  res <- timeout (seconds 2) check
   pure (res == Just True)
   where
     hints = defaultHints {addrSocketType = Stream}
@@ -53,7 +53,7 @@ worker action timeoutSec
       res <- timeout (seconds timeoutSec) (workerLoop action)
       case res of
         Nothing -> do
-          putStrLn "zdun: probe timeout exceeded!"
+          putStrLn "zdun: probe timeout exceeded"
           exitFailure
         Just () -> pure ()
 
@@ -63,5 +63,5 @@ workerLoop action = do
   if stop
     then pure ()
     else do
-      threadDelay (seconds 5)
+      threadDelay (seconds 1)
       workerLoop action

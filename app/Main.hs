@@ -51,7 +51,7 @@ main = do
       exitFailure
     (cmd : args) -> do
       -- wait here
-      forConcurrently_ (optTcp options) (\tcp -> worker (isPortOpen "ya.ru" "801" (optTimeout options)) (optTimeout options))
+      forConcurrently_ (optTcp options) (\tcp -> worker (isPortOpen "ya.ru" "80") (optTimeout options))
       executeFile cmd True args Nothing
 
---  ()  
+--  ()
