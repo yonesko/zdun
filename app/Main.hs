@@ -23,7 +23,7 @@ optsInfo =
           )
     )
     ( fullDesc
-        <> progDesc "Zdun - utility to exec a command after waiting"
+        <> progDesc "Zdun - utility to exec a command after waiting for rediness probes to success or timeout"
     )
 
 opts :: Parser Options
@@ -41,5 +41,3 @@ main = do
 
   let arguments = optRest options
   putStrLn $ "Полученные аргументы после -- или позиционные: " ++ show arguments
-
-  
