@@ -21,7 +21,6 @@ import Network.Socket
     getAddrInfo,
     socket,
   )
-import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 import System.Timeout (timeout)
 
@@ -73,22 +72,20 @@ isPortOpen target = case parseTarget target of
             pure False
           Right ok -> pure ok
 
-worker :: IO Bool -> Int -> IO ()
+worker :: IO Bool -> Int -> IO Bool
 worker action timeoutSec
   | timeoutSec <= 0 = workerLoop action -- 0 или меньше = ждать бесконечно
   | otherwise = do
       res <- timeout (seconds timeoutSec) (workerLoop action)
       case res of
-        Nothing -> do
-          hPutStrLn stderr "[zdun] probe timeout exceeded"
-          exitFailure
-        Just () -> pure ()
+        Nothing -> pure False
+        Just ok -> pure ok
 
-workerLoop :: IO Bool -> IO ()
+workerLoop :: IO Bool -> IO Bool
 workerLoop action = do
   stop <- action
   if stop
-    then pure ()
+    then pure True
     else do
       threadDelay (seconds 1)
       workerLoop action

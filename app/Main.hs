@@ -1,13 +1,14 @@
 module Main (main) where
 
 import Control.Applicative (many, (<**>))
-import Control.Concurrent.Async (forConcurrently_)
+import Control.Concurrent.Async (forConcurrently_, mapConcurrently)
 import Data.Version (showVersion)
 import Lib (parseDuration)
 import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, help, helper, info, infoOption, long, metavar, option, progDesc, short, showDefault, strArgument, strOption, value)
 import Paths_zdun (version)
 import Probes (isPortOpen, worker)
 import System.Exit (exitFailure)
+import System.IO (hPutStrLn, stderr)
 import System.Posix.Process (executeFile)
 
 data Options = Options
@@ -49,8 +50,8 @@ main = do
       putStrLn "[zdun]: command after -- is not specified"
       exitFailure
     (cmd : args) -> do
-      -- wait here
-      forConcurrently_ (optTcp options) (\tcp -> worker (isPortOpen tcp) (optTimeout options))
-      executeFile cmd True args Nothing
-
---  ()
+      checkResults <- mapConcurrently (\tcp -> worker (isPortOpen tcp) (optTimeout options)) (optTcp options)
+      if elem False checkResults
+        then
+          hPutStrLn stderr $ "[zdun]: Some checks failed"
+        else executeFile cmd True args Nothing
