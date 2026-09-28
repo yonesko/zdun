@@ -13,9 +13,9 @@ import System.Timeout (timeout)
 data TcpProbe = TcpProbe String Int
 
 seconds, minutes, milliseconds :: Int -> Int
-seconds      n = n * 1_000_000
+seconds      n = n * 1000000
 minutes      n = n * seconds 60
-milliseconds n = n * 1_000
+milliseconds n = n * 1000
 
 isPortOpen :: HostName -> ServiceName -> Int -> IO Bool
 isPortOpen host port timeoutUs = do
@@ -39,7 +39,7 @@ worker action = do
     stop <- action
     if stop then
         pure ()
-    else $ do
+    else do
         threadDelay (seconds 5)
         worker action
 
