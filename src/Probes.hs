@@ -2,49 +2,76 @@
 
 module Probes
   ( isPortOpen,
+    parseTarget,
     worker,
   )
 where
 
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async (async, link)
-import Control.Exception (IOException, bracket, try)
-import Control.Monad (forever)
+import Control.Exception (IOException, bracket, displayException, try)
+import Data.List (isInfixOf)
 import Network.Socket
+  ( AddrInfo (addrAddress, addrFamily, addrProtocol, addrSocketType),
+    HostName,
+    ServiceName,
+    SocketType (Stream),
+    close,
+    connect,
+    defaultHints,
+    getAddrInfo,
+    socket,
+  )
 import System.Exit (exitFailure)
+import System.IO (hPutStrLn, stderr)
 import System.Timeout (timeout)
 
-data TcpProbe = TcpProbe String Int
-
-seconds, minutes, milliseconds :: Int -> Int
+seconds :: Int -> Int
 seconds n = n * 1000000
-minutes n = n * seconds 60
-milliseconds n = n * 1000
 
-isPortOpen :: HostName -> ServiceName  -> IO Bool
-isPortOpen host port = do
-  -- Оборачиваем ВСЮ операцию целиком в таймаут:
-  res <- timeout (seconds 2) check
-  pure (res == Just True)
-  where
-    hints = defaultHints {addrSocketType = Stream}
+-- Разбирает строки вида "ya.ru:80" или "tcp://ya.ru:8080"
+parseTarget :: String -> Maybe (HostName, ServiceName)
+parseTarget raw =
+  let withoutScheme =
+        if "://" `isInfixOf` raw
+          then drop 3 (dropWhile (/= ':') raw)
+          else raw
+   in case break (== ':') withoutScheme of
+        (host, ':' : port) | not (null host) && not (null port) -> Just (host, port)
+        _ -> Nothing
 
-    check = do
-      -- Перехватываем ошибки и DNS-резолвинга, и соединения
-      result <- try $ do
-        addrs <- getAddrInfo (Just hints) (Just host) (Just port)
-        case addrs of
-          [] -> pure False
-          (serverAddr : _) ->
-            -- Вот здесь сокет ОБЯЗАТЕЛЬНО в bracket, чтобы не утекал дескриптор:
-            bracket
-              (socket (addrFamily serverAddr) (addrSocketType serverAddr) (addrProtocol serverAddr))
-              close
-              (\sock -> connect sock (addrAddress serverAddr) >> pure True)
+isPortOpen :: String -> IO Bool
+isPortOpen target = case parseTarget target of
+  Nothing -> do
+    hPutStrLn stderr $ "[zdun] Invalid target format: " ++ target ++ " (expected host:port or tcp://host:port)"
+    pure False
+  Just (host, port) -> do
+    res <- timeout (seconds 2) check
+    case res of
+      Nothing -> do
+        hPutStrLn stderr $ "[zdun] Timeout connecting to " ++ host ++ ":" ++ port
+        pure False
+      Just ok -> pure ok
+    where
+      hints = defaultHints {addrSocketType = Stream}
 
-      case result of
-        Left (_ :: IOException) -> pure False -- DNS не отрезолвился или порт закрыт
-        Right ok -> pure ok
+      check = do
+        result <- try $ do
+          addrs <- getAddrInfo (Just hints) (Just host) (Just port)
+          case addrs of
+            [] -> do
+              hPutStrLn stderr $ "[zdun] Host not found: " ++ host
+              pure False
+            (serverAddr : _) ->
+              bracket
+                (socket (addrFamily serverAddr) (addrSocketType serverAddr) (addrProtocol serverAddr))
+                close
+                (\sock -> connect sock (addrAddress serverAddr) >> pure True)
+
+        case result of
+          Left (err :: IOException) -> do
+            hPutStrLn stderr $ "[zdun] " ++ host ++ ":" ++ port ++ " error: " ++ displayException err
+            pure False
+          Right ok -> pure ok
 
 worker :: IO Bool -> Int -> IO ()
 worker action timeoutSec
@@ -53,7 +80,7 @@ worker action timeoutSec
       res <- timeout (seconds timeoutSec) (workerLoop action)
       case res of
         Nothing -> do
-          putStrLn "zdun: probe timeout exceeded"
+          hPutStrLn stderr "[zdun] probe timeout exceeded"
           exitFailure
         Just () -> pure ()
 
