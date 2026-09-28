@@ -1,0 +1,34 @@
+stages:
+  - build
+
+variables:
+  EXE_NAME: zdun-exe
+
+build:
+  stage: build
+  image: alpine:3.19
+  before_script:
+    - apk update
+    - apk add --no-cache ghc cabal gcc musl-dev gmp-dev zlib-dev zlib-static libffi-dev make xz tar git
+    - cabal user-config init
+    - 'echo "repository hackage.haskell.org" >> ~/.config/cabal/config'
+    - 'echo "  url: http://hackage.haskell.org/" >> ~/.config/cabal/config'
+    - 'echo "  secure: False" >> ~/.config/cabal/config'
+    - cabal update
+  script:
+    - 'cabal build --only-dependencies --ghc-options="-fno-PIC -fno-PIE -optl-static -optl-pthread"'
+    - 'cabal build --ghc-options="-fno-PIC -fno-PIE -optl-static -optl-pthread -split-sections -O2" --enable-executable-static --disable-shared --disable-executable-dynamic --enable-split-sections exe:${EXE_NAME}'
+    - 'mkdir -p ./out'
+    - 'cp $(cabal list-bin exe:${EXE_NAME}) ./out/${EXE_NAME}'
+    - 'strip --strip-all ./out/${EXE_NAME}'
+    - 'ls -lh ./out/${EXE_NAME}'
+  artifacts:
+    paths:
+      - out/${EXE_NAME}
+    expire_in: 7 days
+  cache:
+    key: cabal-${CI_COMMIT_REF_SLUG}
+    paths:
+      - dist-newstyle/
+      - /root/.local/state/cabal/store/
+      - /root/.cabal/packages/
