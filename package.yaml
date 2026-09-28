@@ -43,6 +43,12 @@ library:
   dependencies:
     - network
     - async
+    - http-client
+    - http-client-tls
+    - http-types
+    - regex-tdfa
+    - bytestring
+    - text
 
 executables:
   zdun-exe:

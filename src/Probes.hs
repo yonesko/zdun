@@ -6,20 +6,6 @@ module Probes
 where
 
 import Control.Concurrent (threadDelay)
-import Control.Exception (IOException, bracket, displayException, try)
-import Data.List (isInfixOf)
-import Network.Socket
-  ( AddrInfo (addrAddress, addrFamily, addrProtocol, addrSocketType),
-    HostName,
-    ServiceName,
-    SocketType (Stream),
-    close,
-    connect,
-    defaultHints,
-    getAddrInfo,
-    socket,
-  )
-import System.IO (hPutStrLn, stderr)
 import System.Timeout (timeout)
 
 seconds :: Int -> Int

@@ -5,6 +5,7 @@ import Control.Concurrent.Async (mapConcurrently)
 import Data.Version (showVersion)
 import Lib (parseDuration)
 import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, help, helper, info, infoOption, long, metavar, option, progDesc, short, showDefault, strArgument, strOption, value)
+import Http (checkHttp)
 import Paths_zdun (version)
 import Probes (worker)
 import System.Exit (exitFailure)
@@ -15,6 +16,7 @@ import Tcp (isPortOpen)
 data Options = Options
   { optTimeout :: Int,
     optTcp :: [String],
+    optHttp :: [String],
     optRest :: [String]
   }
 
@@ -38,6 +40,7 @@ opts =
   Options
     <$> option durationParser (short 't' <> value 0 <> showDefault <> help "Timeout")
     <*> many (strOption (long "tcp" <> help "TCP connection check"))
+    <*> many (strOption (long "http" <> help "HTTP check: URL (for 200 OK) or regex@URL"))
     <*> some (strArgument (metavar "--- CMD"))
 
 durationParser :: ReadM Int
@@ -51,9 +54,17 @@ main = do
       putStrLn "[zdun]: command after -- is not specified"
       exitFailure
     (cmd : args) -> do
-      checkResults <- mapConcurrently (\tcp -> worker (isPortOpen tcp) (optTimeout options)) (optTcp options)
-      if elem False checkResults
+      let tcpChecks = [ (tcp, isPortOpen tcp) | tcp <- optTcp options ]
+      let httpChecks = [ (httpTarget, checkHttp httpTarget) | httpTarget <- optHttp options ]
+      let allChecks = tcpChecks ++ httpChecks
+
+      checkResults <- mapConcurrently (\(name, action) -> do
+        ok <- worker action (optTimeout options)
+        pure (name, ok)) allChecks
+
+      let failedChecks = [ name | (name, False) <- checkResults ]
+      if not (null failedChecks)
         then do
-          let failedChecks = map fst (filter (not . snd) (zip (optTcp options) checkResults))
           hPutStrLn stderr $ "[zdun]: Some checks failed: " ++ unwords failedChecks
+          exitFailure
         else executeFile cmd True args Nothing
