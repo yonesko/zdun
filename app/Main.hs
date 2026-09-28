@@ -3,9 +3,9 @@ module Main (main) where
 import Control.Applicative (many, some, (<**>))
 import Control.Concurrent.Async (mapConcurrently)
 import Data.Version (showVersion)
+import Http (checkHttp)
 import Lib (parseDuration)
 import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, help, helper, info, infoOption, long, metavar, option, progDesc, short, showDefault, strArgument, strOption, value)
-import Http (checkHttp)
 import Paths_zdun (version)
 import Probes (worker)
 import System.Exit (exitFailure)
@@ -54,15 +54,19 @@ main = do
       putStrLn "[zdun]: command after -- is not specified"
       exitFailure
     (cmd : args) -> do
-      let tcpChecks = [ (tcp, isPortOpen tcp) | tcp <- optTcp options ]
-      let httpChecks = [ (httpTarget, checkHttp httpTarget) | httpTarget <- optHttp options ]
+      let tcpChecks = [(tcp, isPortOpen tcp) | tcp <- optTcp options]
+      let httpChecks = [(httpTarget, checkHttp httpTarget) | httpTarget <- optHttp options]
       let allChecks = tcpChecks ++ httpChecks
 
-      checkResults <- mapConcurrently (\(name, action) -> do
-        ok <- worker action (optTimeout options)
-        pure (name, ok)) allChecks
+      checkResults <-
+        mapConcurrently
+          ( \(name, action) -> do
+              ok <- worker action (optTimeout options)
+              pure (name, ok)
+          )
+          allChecks
 
-      let failedChecks = [ name | (name, False) <- checkResults ]
+      let failedChecks = [name | (name, False) <- checkResults]
       if not (null failedChecks)
         then do
           hPutStrLn stderr $ "[zdun]: Some checks failed: " ++ unwords failedChecks
