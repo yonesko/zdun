@@ -18,6 +18,7 @@ import Control.Monad (when)
 import Data.Char (isDigit)
 import Data.Time.Clock (NominalDiffTime, diffUTCTime, getCurrentTime)
 import Data.Version (showVersion)
+import GHC.Base (Alternative ((<|>)))
 import Http (checkHttp)
 import qualified Options.Applicative as OA
 import Paths_zdun (version)
@@ -43,23 +44,22 @@ parseDuration s =
     durationP = sum <$> ReadP.many1 componentP
 
     componentP :: ReadP.ReadP NominalDiffTime
-    componentP = do
-      digits <- ReadP.munch1 isDigit
-      mFrac <- ReadP.option "" (ReadP.char '.' >> ReadP.munch1 isDigit)
-      let n :: NominalDiffTime
-          n = case mFrac of
+    componentP = (*) <$> numberP <*> unitP
+      where
+        numberP = do
+          digits <- ReadP.munch1 isDigit
+          mFrac <- ReadP.option "" (ReadP.char '.' *> ReadP.munch1 isDigit)
+          pure $ case mFrac of
             "" -> fromInteger (read digits)
             f -> case readMaybe (digits ++ "." ++ f) of
               Just (d :: Double) -> realToFrac d
               Nothing -> 0
-      unit <-
-        ReadP.choice
-          [ 3600 <$ ReadP.char 'h',
-            0.001 <$ ReadP.string "ms",
-            60 <$ ReadP.char 'm',
-            1 <$ ReadP.char 's'
-          ]
-      pure (n * unit)
+
+        unitP =
+          3600 <$ ReadP.char 'h'
+            <|> 0.001 <$ ReadP.string "ms"
+            <|> 60 <$ ReadP.char 'm'
+            <|> 1 <$ ReadP.char 's'
 
 data Options = Options
   { optTimeout :: NominalDiffTime,

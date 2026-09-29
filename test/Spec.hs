@@ -15,6 +15,15 @@ import System.Environment (setEnv)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import System.Process (readProcessWithExitCode)
 import Test.Hspec
+  ( Spec,
+    describe,
+    hspec,
+    it,
+    pendingWith,
+    shouldBe,
+    shouldContain,
+    shouldReturn,
+  )
 
 -- | Spawns a lightweight local HTTP/TCP server on a free port simulating a test site.
 -- Responds with 200 OK and UTF-8 encoded body with both English and Russian text.
@@ -187,6 +196,39 @@ spec = do
             code `shouldBe` ExitFailure 1
             isInfixOf "SHOULD_NOT_EXECUTE" stdoutStr `shouldBe` False
             stderrStr `shouldContain` "Some checks failed"
+
+  describe "verbose logging flag (-v)" $ do
+    it "prints progress and success logs to stderr when -v is enabled" $
+      withTestServer $ \port -> do
+        mExe <- findExecutable "zdun-exe"
+        case mExe of
+          Nothing -> pendingWith "zdun-exe binary not found in PATH"
+          Just exe -> do
+            (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "127.0.0.1:" ++ show port, "--", "true"] ""
+            code `shouldBe` ExitSuccess
+            stderrStr `shouldContain` "[zdun] Running 127.0.0.1:"
+            stderrStr `shouldContain` "[zdun] All checks passed"
+
+    it "stays completely silent on stderr when -v is not specified and checks pass" $
+      withTestServer $ \port -> do
+        mExe <- findExecutable "zdun-exe"
+        case mExe of
+          Nothing -> pendingWith "zdun-exe binary not found in PATH"
+          Just exe -> do
+            (code, _, stderrStr) <- readProcessWithExitCode exe ["--http", "127.0.0.1:" ++ show port, "--", "true"] ""
+            code `shouldBe` ExitSuccess
+            isInfixOf "[zdun] Running" stderrStr `shouldBe` False
+            isInfixOf "[zdun] All checks passed" stderrStr `shouldBe` False
+            stderrStr `shouldBe` ""
+
+    it "prints failure logs to stderr even without -v when a check fails" $ do
+      mExe <- findExecutable "zdun-exe"
+      case mExe of
+        Nothing -> pendingWith "zdun-exe binary not found in PATH"
+        Just exe -> do
+          (code, _, stderrStr) <- readProcessWithExitCode exe ["-t", "500ms", "--tcp", "127.0.0.1:54321", "--", "true"] ""
+          code `shouldBe` ExitFailure 1
+          stderrStr `shouldContain` "Some checks failed"
 
   describe "main / CLI tests with Russian body and regex" $ do
     it "succeeds with Russian substring match in body: --http 'Привет@host:port'" $
