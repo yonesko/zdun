@@ -77,10 +77,11 @@ main = do
       end <- getCurrentTime
       let diff = diffUTCTime end start
       -- assert results
-      when (optVerbose options) (hPutStrLn stderr $ "[zdun] All checks passed in " <> show diff)
       let failedChecks = [name | (name, False) <- checkResults]
       if not (null failedChecks)
         then do
-          hPutStrLn stderr $ "[zdun] Some checks failed: " ++ unwords failedChecks
+          hPutStrLn stderr $ mconcat ["[zdun] Some checks failed in", show diff, ":", unwords failedChecks]
           exitFailure
-        else executeFile cmd True args Nothing
+        else do
+          when (optVerbose options) (hPutStrLn stderr $ "[zdun] All checks passed in " <> show diff)
+          executeFile cmd True args Nothing
