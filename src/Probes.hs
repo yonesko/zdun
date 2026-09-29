@@ -24,7 +24,7 @@ worker logMsg name action timeoutSec
 
 workerLoop :: (String -> IO ()) -> String -> IO Bool -> IO Bool
 workerLoop logMsg name action = do
-  logMsg $ "Running " <> name
+  logMsg $ "[zdun] Running " <> name
   stop <- action
   if stop
     then pure True
