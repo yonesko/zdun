@@ -6,16 +6,20 @@ module Probes
 where
 
 import Control.Concurrent (threadDelay)
+import Data.Time.Clock (NominalDiffTime)
 import System.Timeout (timeout)
 
 seconds :: Int -> Int
 seconds n = n * 1000000
 
-worker :: (String -> IO ()) -> String -> IO Bool -> Int -> IO Bool
-worker logMsg name action timeoutSec
-  | timeoutSec <= 0 = workerLoop logMsg name action -- 0 или меньше = ждать бесконечно
+diffToMicroseconds :: NominalDiffTime -> Int
+diffToMicroseconds d = round (d * 1000000)
+
+worker :: (String -> IO ()) -> String -> IO Bool -> NominalDiffTime -> IO Bool
+worker logMsg name action timeoutDiff
+  | timeoutDiff <= 0 = workerLoop logMsg name action -- 0 или меньше = ждать бесконечно
   | otherwise = do
-      res <- timeout (seconds timeoutSec) (workerLoop logMsg name action)
+      res <- timeout (diffToMicroseconds timeoutDiff) (workerLoop logMsg name action)
       case res of
         Nothing -> pure False
         Just ok -> pure ok

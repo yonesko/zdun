@@ -50,6 +50,7 @@ library
     , network
     , regex-tdfa
     , text
+    , time
   default-language: Haskell2010
 
 executable zdun-exe
@@ -92,5 +93,6 @@ test-suite zdun-test
   build-depends:
       base >=4.7 && <5
     , hspec
+    , time
     , zdun
   default-language: Haskell2010

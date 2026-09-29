@@ -5,7 +5,7 @@ import Control.Concurrent (withMVar)
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.MVar (newMVar)
 import Control.Monad (when)
-import Data.Time.Clock (diffUTCTime, getCurrentTime)
+import Data.Time.Clock (NominalDiffTime, diffUTCTime, getCurrentTime)
 import Data.Version (showVersion)
 import Http (checkHttp)
 import Lib (parseDuration)
@@ -18,7 +18,7 @@ import System.Posix.Process (executeFile)
 import Tcp (isPortOpen)
 
 data Options = Options
-  { optTimeout :: Int,
+  { optTimeout :: NominalDiffTime,
     optVerbose :: Bool,
     optTcp :: [String],
     optHttp :: [String],
@@ -49,7 +49,7 @@ opts =
     <*> many (strOption (long "http" <> help "HTTP check: URL (for 200 OK) or regex@URL"))
     <*> some (strArgument (metavar "--- CMD"))
 
-durationParser :: ReadM Int
+durationParser :: ReadM NominalDiffTime
 durationParser = eitherReader parseDuration
 
 main :: IO ()

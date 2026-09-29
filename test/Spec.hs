@@ -27,5 +27,17 @@ main = hspec $ do
     it "rejects strings starting with non-digit" $
       parseDuration "s1" `shouldBe` Left "Invalid duration s1"
 
-    it "rejects empty string" $
+    it "parses empty string" $
       parseDuration "" `shouldBe` Right 0
+
+    it "parses zero string" $
+      parseDuration "0" `shouldBe` Right 0
+
+    it "parses hours" $
+      parseDuration "1h" `shouldBe` Right 3600
+
+    it "parses fractional seconds" $
+      parseDuration "1.5s" `shouldBe` Right 1.5
+
+    it "parses milliseconds" $
+      parseDuration "500ms" `shouldBe` Right 0.5

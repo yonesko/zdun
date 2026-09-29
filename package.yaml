@@ -21,6 +21,7 @@ description: Please see the README on GitHub at <https://github.com/githubuser/z
 
 dependencies:
   - base >= 4.7 && < 5
+  - time
 
 ghc-options:
   - -Wall
@@ -64,7 +65,6 @@ executables:
       - unix
       - async
       - split
-      - time
 
 tests:
   zdun-test:
