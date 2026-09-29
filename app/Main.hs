@@ -1,11 +1,13 @@
 module Main (main) where
 
 import Control.Applicative (many, some, (<**>))
+import Control.Concurrent (withMVar)
 import Control.Concurrent.Async (mapConcurrently)
+import Control.Concurrent.MVar (newMVar)
 import Data.Version (showVersion)
 import Http (checkHttp)
 import Lib (parseDuration)
-import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, help, helper, info, infoOption, long, metavar, option, progDesc, short, showDefault, strArgument, strOption, value)
+import Options.Applicative (Parser, ParserInfo, ReadM, eitherReader, execParser, fullDesc, help, helper, info, infoOption, long, metavar, option, progDesc, short, showDefault, strArgument, strOption, switch, value)
 import Paths_zdun (version)
 import Probes (worker)
 import System.Exit (exitFailure)
@@ -15,6 +17,7 @@ import Tcp (isPortOpen)
 
 data Options = Options
   { optTimeout :: Int,
+    optVerbose :: Bool,
     optTcp :: [String],
     optHttp :: [String],
     optRest :: [String]
@@ -39,6 +42,7 @@ opts :: Parser Options
 opts =
   Options
     <$> option durationParser (short 't' <> value 0 <> showDefault <> help "Timeout")
+    <*> switch (short 'v' <> help "Verbose")
     <*> many (strOption (long "tcp" <> help "TCP connection check"))
     <*> many (strOption (long "http" <> help "HTTP check: URL (for 200 OK) or regex@URL"))
     <*> some (strArgument (metavar "--- CMD"))
@@ -57,11 +61,12 @@ main = do
       let tcpChecks = [(tcp, isPortOpen tcp) | tcp <- optTcp options]
       let httpChecks = [(httpTarget, checkHttp httpTarget) | httpTarget <- optHttp options]
       let allChecks = tcpChecks ++ httpChecks
-
+      logLock <- newMVar ()
+      let logMsg = if optVerbose options then \msg -> withMVar logLock $ \_ -> hPutStrLn stderr msg else const (pure ())
       checkResults <-
         mapConcurrently
           ( \(name, action) -> do
-              ok <- worker action (optTimeout options)
+              ok <- worker logMsg name action (optTimeout options)
               pure (name, ok)
           )
           allChecks
