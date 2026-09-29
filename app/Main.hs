@@ -57,7 +57,7 @@ main = do
   options <- execParser optsInfo
   case optRest options of
     [] -> do
-      putStrLn "[zdun]: command after -- is not specified"
+      putStrLn "[zdun] command after -- is not specified"
       exitFailure
     (cmd : args) -> do
       -- spawn checks concurrently
@@ -81,6 +81,6 @@ main = do
       let failedChecks = [name | (name, False) <- checkResults]
       if not (null failedChecks)
         then do
-          hPutStrLn stderr $ "[zdun]: Some checks failed: " ++ unwords failedChecks
+          hPutStrLn stderr $ "[zdun] Some checks failed: " ++ unwords failedChecks
           exitFailure
         else executeFile cmd True args Nothing
