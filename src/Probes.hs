@@ -6,8 +6,6 @@ module Probes
 where
 
 import Control.Concurrent (threadDelay)
-import Control.Monad (when)
-import System.IO (hPutStrLn, stderr)
 import System.Timeout (timeout)
 
 seconds :: Int -> Int

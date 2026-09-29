@@ -4,6 +4,8 @@ import Control.Applicative (many, some, (<**>))
 import Control.Concurrent (withMVar)
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.MVar (newMVar)
+import Control.Monad (when)
+import Data.Time.Clock (diffUTCTime, getCurrentTime)
 import Data.Version (showVersion)
 import Http (checkHttp)
 import Lib (parseDuration)
@@ -58,11 +60,13 @@ main = do
       putStrLn "[zdun]: command after -- is not specified"
       exitFailure
     (cmd : args) -> do
+      -- spawn checks concurrently
       let tcpChecks = [(tcp, isPortOpen tcp) | tcp <- optTcp options]
       let httpChecks = [(httpTarget, checkHttp httpTarget) | httpTarget <- optHttp options]
       let allChecks = tcpChecks ++ httpChecks
       logLock <- newMVar ()
       let logMsg = if optVerbose options then \msg -> withMVar logLock $ \_ -> hPutStrLn stderr msg else const (pure ())
+      start <- getCurrentTime
       checkResults <-
         mapConcurrently
           ( \(name, action) -> do
@@ -70,7 +74,10 @@ main = do
               pure (name, ok)
           )
           allChecks
-
+      end <- getCurrentTime
+      let diff = diffUTCTime end start
+      -- assert results
+      when (optVerbose options) (hPutStrLn stderr $ "[zdun] All checks passed in " <> show diff)
       let failedChecks = [name | (name, False) <- checkResults]
       if not (null failedChecks)
         then do

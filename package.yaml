@@ -64,6 +64,7 @@ executables:
       - unix
       - async
       - split
+      - time
 
 tests:
   zdun-test:
