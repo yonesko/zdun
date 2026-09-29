@@ -80,7 +80,7 @@ main = do
       let failedChecks = [name | (name, False) <- checkResults]
       if not (null failedChecks)
         then do
-          hPutStrLn stderr $ mconcat ["[zdun] Some checks failed in", show diff, ":", unwords failedChecks]
+          hPutStrLn stderr $ unwords ["[zdun] Some checks failed in", show diff ++ ":", unwords failedChecks]
           exitFailure
         else do
           when (optVerbose options) (hPutStrLn stderr $ "[zdun] All checks passed in " <> show diff)
