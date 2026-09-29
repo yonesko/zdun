@@ -2,14 +2,12 @@
 
 module Http
   ( checkHttp,
-    parseHttpTarget,
   )
 where
 
 import Control.Exception (displayException, try)
 import qualified Data.ByteString as BS
 import Data.List (isPrefixOf)
-import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TE
 import Network.HTTP.Client
@@ -27,6 +25,7 @@ import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types.Status (statusCode)
 import System.IO (hPutStrLn, stderr)
 import Text.Regex.TDFA ((=~))
+import Text.Regex.TDFA.Text ()
 
 -- | Разбирает строку вида "regex@url" или просто "url".
 parseHttpTarget :: String -> (Maybe String, String)
@@ -57,7 +56,7 @@ checkHttp rawTarget = do
       let req =
             initialReq
               { method = "GET",
-                responseTimeout = responseTimeoutMicro (2 * 1000000)
+                responseTimeout = responseTimeoutMicro (seconds 2) --TODO t/o
               }
       res <-
         try
@@ -68,12 +67,10 @@ checkHttp rawTarget = do
                   hPutStrLn stderr $ "[zdun] " ++ url ++ " returned status " ++ show code ++ " (expected 200)"
                   pure False
                 else case mRegex of
-                  -- Вариант 1: регулярка не указана — 200 OK достаточно, тело не качаем
                   Nothing -> pure True
-                  -- Вариант 2: регулярка указана — читаем весь ответ и проверяем
                   Just regexPat -> do
                     chunks <- brConsume (responseBody resp)
-                    let bodyText = T.unpack (TE.decodeUtf8With TE.lenientDecode (BS.concat chunks))
+                    let bodyText = TE.decodeUtf8With TE.lenientDecode (BS.concat chunks)
                     let matched = (bodyText =~ regexPat) :: Bool
                     if matched
                       then pure True
@@ -91,3 +88,6 @@ checkHttp rawTarget = do
           hPutStrLn stderr $ "[zdun] HTTP error for " ++ url ++ ": " ++ reason
           pure False
         Right ok -> pure ok
+
+seconds :: Int -> Int
+seconds n = n * 1000000
