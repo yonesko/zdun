@@ -50,6 +50,9 @@ library:
     - regex-tdfa
     - bytestring
     - text
+    - optparse-applicative
+    - unix
+    - process
 
 executables:
   zdun-exe:
@@ -77,3 +80,10 @@ tests:
     dependencies:
       - zdun
       - hspec
+      - process
+      - unix
+      - optparse-applicative
+      - directory
+      - network
+      - bytestring
+      - text
