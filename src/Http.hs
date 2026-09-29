@@ -7,16 +7,16 @@ module Http
 where
 
 import Control.Exception (displayException, try)
-import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString as BS
 import Data.List (isPrefixOf)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TE
 import Network.HTTP.Client
-  ( HttpException,
+  ( HttpException (HttpExceptionRequest, InvalidUrlException),
     Request (method, responseTimeout),
     Response (responseStatus),
-    brReadSome,
+    brConsume,
     newManager,
     parseRequest,
     responseBody,
@@ -41,7 +41,7 @@ parseHttpTarget raw =
 
 -- | Единый метод для всех HTTP проверок:
 -- 1. Если передано "url" — проверяет статус 200 OK (тело не читается).
--- 2. Если передано "regex@url" — проверяет статус 200 OK и совпадение первых 64 КБ тела с регуляркой.
+-- 2. Если передано "regex@url" — проверяет статус 200 OK и совпадение всего тела ответа с регуляркой.
 checkHttp :: String -> IO Bool
 checkHttp rawTarget = do
   let (mRegex, url) = parseHttpTarget rawTarget
@@ -70,10 +70,10 @@ checkHttp rawTarget = do
                 else case mRegex of
                   -- Вариант 1: регулярка не указана — 200 OK достаточно, тело не качаем
                   Nothing -> pure True
-                  -- Вариант 2: регулярка указана — читаем до 64 КБ и проверяем
+                  -- Вариант 2: регулярка указана — читаем весь ответ и проверяем
                   Just regexPat -> do
-                    chunk <- brReadSome (responseBody resp) (64 * 1024)
-                    let bodyText = T.unpack (TE.decodeUtf8With TE.lenientDecode (L.toStrict chunk))
+                    chunks <- brConsume (responseBody resp)
+                    let bodyText = T.unpack (TE.decodeUtf8With TE.lenientDecode (BS.concat chunks))
                     let matched = (bodyText =~ regexPat) :: Bool
                     if matched
                       then pure True
@@ -84,7 +84,10 @@ checkHttp rawTarget = do
           IO (Either HttpException Bool)
 
       case res of
-        Left err -> do
-          hPutStrLn stderr $ "[zdun] HTTP error for " ++ url ++ ": " ++ displayException err
+        Left (HttpExceptionRequest _ content) -> do
+          hPutStrLn stderr $ "[zdun] HTTP error for " ++ url ++ ": " ++ unwords (lines (show content))
+          pure False
+        Left (InvalidUrlException _ reason) -> do
+          hPutStrLn stderr $ "[zdun] HTTP error for " ++ url ++ ": " ++ reason
           pure False
         Right ok -> pure ok
