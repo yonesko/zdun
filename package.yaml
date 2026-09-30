@@ -51,7 +51,6 @@ library:
     - text
     - optparse-applicative
     - unix
-    - process
 
 executables:
   zdun-exe:

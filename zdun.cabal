@@ -48,7 +48,6 @@ library
     , http-types
     , network
     , optparse-applicative
-    , process
     , regex-tdfa
     , text
     , time
