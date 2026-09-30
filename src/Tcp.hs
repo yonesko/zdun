@@ -17,6 +17,7 @@ import Network.Socket
     getAddrInfo,
     socket,
   )
+import Probes (CheckResult (..))
 import System.Timeout (timeout)
 
 seconds :: Int -> Int
@@ -33,13 +34,13 @@ parseTarget raw =
         (host, ':' : port) | not (null host) && not (null port) -> Just (host, port)
         _ -> Nothing
 
-isPortOpen :: String -> IO (Either String ())
+isPortOpen :: String -> IO CheckResult
 isPortOpen target = case parseTarget target of
-  Nothing -> pure $ Left ("Invalid target format: " ++ target ++ " (expected host:port or tcp://host:port)")
+  Nothing -> pure $ Err ("Invalid target format: " ++ target ++ " (expected host:port or tcp://host:port)")
   Just (host, port) -> do
     res <- timeout (seconds 2) check
     pure $ case res of
-      Nothing -> Left ("Timeout connecting to " ++ host ++ ":" ++ port)
+      Nothing -> Err ("Timeout connecting to " ++ host ++ ":" ++ port)
       Just r -> r
     where
       hints = defaultHints {addrSocketType = Stream}
@@ -56,5 +57,5 @@ isPortOpen target = case parseTarget target of
                 (\sock -> connect sock (addrAddress serverAddr) >> pure (Right ()))
 
         case result of
-          Left (err :: IOException) -> pure (Left (unwords (lines (displayException err))))
-          Right r -> pure r
+          Left (err :: IOException) -> pure (Err (unwords (lines (displayException err))))
+          Right _ -> pure Ok

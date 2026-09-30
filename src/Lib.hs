@@ -22,7 +22,7 @@ import GHC.Base (Alternative ((<|>)))
 import Http (checkHttp)
 import qualified Options.Applicative as OA
 import Paths_zdun (version)
-import Probes (worker)
+import Probes (CheckResult (..), worker)
 import System.Environment (getArgs)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
 import System.IO (hPutStrLn, stderr)
@@ -105,8 +105,8 @@ runWithOptions options =
       hPutStrLn stderr "[zdun] command after -- is not specified"
       pure (Left (ExitFailure 1))
     (cmd : args) -> do
-      let tcpChecks = [(tcp, isPortOpen tcp) | tcp <- optTcp options]
-      let httpChecks = [(httpTarget, checkHttp httpTarget) | httpTarget <- optHttp options]
+      let tcpChecks = [(name, isPortOpen name) | name <- optTcp options]
+      let httpChecks = [(name, checkHttp name) | name <- optHttp options]
       let allChecks = tcpChecks ++ httpChecks
       logLock <- newMVar ()
       let logMsg = if optVerbose options then \msg -> withMVar logLock $ \_ -> hPutStrLn stderr msg else const (pure ())
@@ -120,7 +120,7 @@ runWithOptions options =
           allChecks
       end <- getCurrentTime
       let diff = diffUTCTime end start
-      let failedChecks = [name | (name, Left _) <- checkResults]
+      let failedChecks = [name | (name, Err _) <- checkResults]
       if not (null failedChecks)
         then do
           hPutStrLn stderr $ unwords ["[zdun] Some checks failed in", show diff ++ ":", unwords failedChecks]

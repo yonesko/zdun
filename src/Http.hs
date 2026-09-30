@@ -25,6 +25,7 @@ import Network.HTTP.Client
   )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types.Status (statusCode)
+import Probes (CheckResult (..))
 import Text.Regex.TDFA ((=~))
 import Text.Regex.TDFA.Text ()
 
@@ -58,7 +59,7 @@ shortHttpError (HttpExceptionRequest _ content) = case content of
 -- | Единый метод для всех HTTP проверок:
 -- 1. Если передано "url" — проверяет статус 200 OK (тело не читается).
 -- 2. Если передано "regex@url" — проверяет статус 200 OK и совпадение всего тела ответа с регуляркой.
-checkHttp :: String -> IO (Either String ())
+checkHttp :: String -> IO CheckResult
 checkHttp rawTarget = do
   let (mRegex, url) = parseHttpTarget rawTarget
   manager <- newManager tlsManagerSettings
@@ -66,33 +67,33 @@ checkHttp rawTarget = do
   -- Ловим только сетевые/HTTP ошибки, НЕ перехватывая асинхронный Timeout и Ctrl+C!
   mReq <- try (parseRequest url) :: IO (Either HttpException Request)
   case mReq of
-    Left err -> pure $ Left (shortHttpError err)
+    Left err -> pure $ Err (shortHttpError err)
     Right initialReq -> do
       let req =
             initialReq
               { method = "GET",
-                responseTimeout = responseTimeoutMicro (seconds 2) --TODO t/o
+                responseTimeout = responseTimeoutMicro (seconds 2)
               }
       res <-
         try
           ( withResponse req manager $ \resp -> do
               let code = statusCode (responseStatus resp)
               if code /= 200
-                then pure $ Left ("status " ++ show code ++ " (expected 200)")
+                then pure $ Err ("status " ++ show code ++ " (expected 200)")
                 else case mRegex of
-                  Nothing -> pure (Right ())
+                  Nothing -> pure Ok
                   Just regexPat -> do
                     chunks <- brConsume (responseBody resp)
                     let bodyText = TE.decodeUtf8With TE.lenientDecode (BS.concat chunks)
                     let matched = (bodyText =~ regexPat) :: Bool
                     if matched
-                      then pure (Right ())
-                      else pure $ Left ("body did not match regex: " ++ regexPat)
+                      then pure Ok
+                      else pure $ Err ("body did not match regex: " ++ regexPat)
           ) ::
-          IO (Either HttpException (Either String ()))
+          IO (Either HttpException (CheckResult))
 
       pure $ case res of
-        Left err -> Left (shortHttpError err)
+        Left err -> Err (shortHttpError err)
         Right outcome -> outcome
 
 seconds :: Int -> Int
