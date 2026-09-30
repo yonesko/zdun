@@ -24,7 +24,7 @@ worker logMsg name action timeoutDiff
       res <- timeout (diffToMicroseconds timeoutDiff) $ workerLoop logMsg name action
       case res of
         Nothing -> do
-          logMsg $ "" <> name <> " timeout"
+          logMsg $ name <> " timeout"
           pure $ Err "timeout"
         Just r -> pure r
 
@@ -34,9 +34,9 @@ workerLoop logMsg name action = do
   res <- action
   case res of
     Ok -> do
-      logMsg $ "" <> name <> " OK"
+      logMsg $ name <> " OK"
       pure Ok
     Err err -> do
-      logMsg $ "" <> name <> " error: " <> err
+      logMsg $ name <> " error: " <> err
       threadDelay (seconds 1)
       workerLoop logMsg name action
