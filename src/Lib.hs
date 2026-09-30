@@ -95,7 +95,7 @@ durationParser = OA.eitherReader parseDuration
 printLog :: MVar () -> String -> IO ()
 printLog logLock msg = withMVar logLock $ \_ -> do
   ts <- formatTime defaultTimeLocale "%H:%M:%S" <$> getCurrentTime
-  hPutStrLn stderr $ "[zdun] " <> msg
+  hPutStrLn stderr $ "[zdun] [" ++ ts ++ "] " ++ msg
 
 -- | Runs readiness checks for parsed options.
 -- Returns Right (cmd, args) if all checks pass.
@@ -104,7 +104,7 @@ runWithOptions :: Options -> IO (Either ExitCode (FilePath, [String]))
 runWithOptions options =
   case optRest options of
     [] -> do
-      hPutStrLn stderr "command after -- is not specified"
+      hPutStrLn stderr "[zdun] command after -- is not specified"
       pure $ Left $ ExitFailure 1
     cmd : args -> do
       let tcpChecks = [(name, isPortOpen name) | name <- optTcp options]

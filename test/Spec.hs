@@ -172,8 +172,9 @@ spec = do
             (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "127.0.0.1:" ++ show port, "--", "echo", "BINARY_EXEC_OK"] ""
             code `shouldBe` ExitSuccess
             stdoutStr `shouldContain` "BINARY_EXEC_OK"
-            stderrStr `shouldContain` "[zdun] Running 127.0.0.1:"
-            stderrStr `shouldContain` "[zdun] All checks passed"
+            stderrStr `shouldContain` "[zdun]"
+            stderrStr `shouldContain` "Running 127.0.0.1:"
+            stderrStr `shouldContain` "All checks passed"
 
     it "executes binary with regex and tcp checks on test server" $
       withTestServer $ \port -> do
@@ -184,7 +185,8 @@ spec = do
             (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "Example Domain@127.0.0.1:" ++ show port, "--tcp", "127.0.0.1:" ++ show port, "--", "echo", "BINARY_COMBINED_OK"] ""
             code `shouldBe` ExitSuccess
             stdoutStr `shouldContain` "BINARY_COMBINED_OK"
-            stderrStr `shouldContain` "[zdun] All checks passed"
+            stderrStr `shouldContain` "[zdun]"
+            stderrStr `shouldContain` "All checks passed"
 
     it "executes binary and fails on regex mismatch with timeout" $
       withTestServer $ \port -> do
@@ -206,9 +208,10 @@ spec = do
           Just exe -> do
             (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "127.0.0.1:" ++ show port, "--", "true"] ""
             code `shouldBe` ExitSuccess
-            stderrStr `shouldContain` "[zdun] Running 127.0.0.1:"
-            stderrStr `shouldContain` ("[zdun] 127.0.0.1:" ++ show port ++ " OK")
-            stderrStr `shouldContain` "[zdun] All checks passed"
+            stderrStr `shouldContain` "[zdun]"
+            stderrStr `shouldContain` "Running 127.0.0.1:"
+            stderrStr `shouldContain` ("127.0.0.1:" ++ show port ++ " OK")
+            stderrStr `shouldContain` "All checks passed"
 
     it "prints error logs to stderr when -v is enabled and TCP check fails" $ do
       mExe <- findExecutable "zdun-exe"
@@ -217,8 +220,9 @@ spec = do
         Just exe -> do
           (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "-t", "500ms", "--tcp", "127.0.0.1:54321", "--", "true"] ""
           code `shouldBe` ExitFailure 1
-          stderrStr `shouldContain` "[zdun] Running 127.0.0.1:54321"
-          stderrStr `shouldContain` "[zdun] 127.0.0.1:54321 error:"
+          stderrStr `shouldContain` "[zdun]"
+          stderrStr `shouldContain` "Running 127.0.0.1:54321"
+          stderrStr `shouldContain` "127.0.0.1:54321 error:"
           stderrStr `shouldContain` "Some checks failed"
 
     it "prints error logs to stderr when -v is enabled and HTTP regex check fails" $
@@ -229,7 +233,8 @@ spec = do
           Just exe -> do
             (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "-t", "500ms", "--http", "NonExistentRe@127.0.0.1:" ++ show port, "--", "true"] ""
             code `shouldBe` ExitFailure 1
-            stderrStr `shouldContain` "[zdun] Running NonExistentRe@127.0.0.1:"
+            stderrStr `shouldContain` "[zdun]"
+            stderrStr `shouldContain` "Running NonExistentRe@127.0.0.1:"
             stderrStr `shouldContain` "error: body did not match regex: NonExistentRe"
             stderrStr `shouldContain` "Some checks failed"
 
@@ -241,8 +246,8 @@ spec = do
           Just exe -> do
             (code, _, stderrStr) <- readProcessWithExitCode exe ["--http", "127.0.0.1:" ++ show port, "--", "true"] ""
             code `shouldBe` ExitSuccess
-            isInfixOf "[zdun] Running" stderrStr `shouldBe` False
-            isInfixOf "[zdun] All checks passed" stderrStr `shouldBe` False
+            isInfixOf "Running" stderrStr `shouldBe` False
+            isInfixOf "All checks passed" stderrStr `shouldBe` False
             stderrStr `shouldBe` ""
 
     it "prints failure logs to stderr even without -v when a check fails" $ do
@@ -289,7 +294,8 @@ spec = do
             (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "готов к работе@127.0.0.1:" ++ show port, "--", "echo", "ТЕСТ_ПРОЙДЕН"] ""
             code `shouldBe` ExitSuccess
             stdoutStr `shouldContain` "ТЕСТ_ПРОЙДЕН"
-            stderrStr `shouldContain` "[zdun] All checks passed"
+            stderrStr `shouldContain` "[zdun]"
+            stderrStr `shouldContain` "All checks passed"
 
     it "executes binary zdun-exe and fails when Russian regex does not match" $
       withTestServer $ \port -> do
