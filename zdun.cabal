@@ -93,7 +93,6 @@ test-suite zdun-test
     , hspec
     , network
     , optparse-applicative
-    , process
     , text
     , time
     , unix
