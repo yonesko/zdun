@@ -27,13 +27,10 @@ import Test.Hspec
     shouldSatisfy,
   )
 
--- | Spawns a lightweight local HTTP/TCP server on a free port simulating a test site.
--- Responds with 200 OK and UTF-8 encoded body with both English and Russian text.
-withTestServer :: (Int -> IO a) -> IO a
-withTestServer = withTestServerBody "Example Domain - Тестовый сервер готов к работе. Привет, мир!\n"
-
-withTestServerBody :: T.Text -> (Int -> IO a) -> IO a
-withTestServerBody bodyText action = do
+-- | Creates a bound, listening TCP server on a free port and runs an action with the port number.
+-- The provided loop runs in a background thread that is killed when the action completes.
+withBoundServer :: (S.Socket -> IO ()) -> (Int -> IO a) -> IO a
+withBoundServer serverLoop action = do
   serverSock <- S.socket S.AF_INET S.Stream S.defaultProtocol
   S.setSocketOption serverSock S.ReuseAddr 1
   S.bind serverSock (S.SockAddrInet 0 (S.tupleToHostAddress (127, 0, 0, 1)))
@@ -43,12 +40,17 @@ withTestServerBody bodyText action = do
         S.SockAddrInet p _ -> fromIntegral p
         _ -> error "Unexpected socket address"
   bracket
-    (forkIO $ acceptLoop serverSock)
-    ( \tid -> do
-        killThread tid
-        S.close serverSock
-    )
+    (forkIO $ serverLoop serverSock)
+    (\tid -> killThread tid >> S.close serverSock)
     (\_ -> action port)
+
+-- | Spawns a lightweight local HTTP server on a free port simulating a test site.
+-- Responds with 200 OK and UTF-8 encoded body with both English and Russian text.
+withTestServer :: (Int -> IO a) -> IO a
+withTestServer = withTestServerBody "Example Domain - Тестовый сервер готов к работе. Привет, мир!\n"
+
+withTestServerBody :: T.Text -> (Int -> IO a) -> IO a
+withTestServerBody bodyText = withBoundServer acceptLoop
   where
     bodyBytes = TE.encodeUtf8 bodyText
     respBytes =
@@ -74,35 +76,26 @@ withTestServerBody bodyText action = do
 -- | Spawns a server that accepts TCP connections but never sends any data.
 -- Used to test that -t timeout is respected even when the connection is established.
 withSilentServer :: (Int -> IO a) -> IO a
-withSilentServer action = do
-  serverSock <- S.socket S.AF_INET S.Stream S.defaultProtocol
-  S.setSocketOption serverSock S.ReuseAddr 1
-  S.bind serverSock (S.SockAddrInet 0 (S.tupleToHostAddress (127, 0, 0, 1)))
-  S.listen serverSock 128
-  sockAddr <- S.getSocketName serverSock
-  let port = case sockAddr of
-        S.SockAddrInet p _ -> fromIntegral p
-        _ -> error "Unexpected socket address"
-  bracket
-    (forkIO $ silentLoop serverSock)
-    ( \tid -> do
-        killThread tid
-        S.close serverSock
-    )
-    (\_ -> action port)
+withSilentServer = withBoundServer silentLoop
   where
     silentLoop sock = do
       res <- try (S.accept sock) :: IO (Either IOError (S.Socket, S.SockAddr))
       case res of
         Left _ -> pure ()
         Right (conn, _) -> do
-          -- Accept the connection but intentionally never send any data.
-          -- The connection is kept open until the server is shut down.
           _ <- forkIO $ do
             _ <- try (SB.recv conn 2048) :: IO (Either IOError BS.ByteString)
-            -- Deliberately no send here — simulate a hung server
-            pure ()
+            -- Deliberately no send here — simulate a hung server.
+            -- The socket is still closed to avoid resource leaks.
+            S.close conn
           silentLoop sock
+
+-- | Runs an action with the path to the zdun-exe binary,
+-- or marks the test as pending if the binary is not found in PATH.
+withZdunExe :: (FilePath -> IO ()) -> IO ()
+withZdunExe action = do
+  mExe <- findExecutable "zdun-exe"
+  maybe (pendingWith "zdun-exe binary not found in PATH") action mExe
 
 main :: IO ()
 main = do
@@ -226,100 +219,76 @@ spec = do
 
   describe "zdun-exe process execution (end-to-end)" $ do
     it "executes binary, checks test server and runs the target command" $
-      withTestServer $ \port -> do
-        mExe <- findExecutable "zdun-exe"
-        case mExe of
-          Nothing -> pendingWith "zdun-exe binary not found in PATH"
-          Just exe -> do
-            (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "127.0.0.1:" ++ show port, "--", "echo", "BINARY_EXEC_OK"] ""
-            code `shouldBe` ExitSuccess
-            stdoutStr `shouldContain` "BINARY_EXEC_OK"
-            stderrStr `shouldContain` "[zdun]"
-            stderrStr `shouldContain` "Running 127.0.0.1:"
-            stderrStr `shouldContain` "All checks passed"
+      withTestServer $ \port ->
+        withZdunExe $ \exe -> do
+          (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "127.0.0.1:" ++ show port, "--", "echo", "BINARY_EXEC_OK"] ""
+          code `shouldBe` ExitSuccess
+          stdoutStr `shouldContain` "BINARY_EXEC_OK"
+          stderrStr `shouldContain` "[zdun]"
+          stderrStr `shouldContain` "Running 127.0.0.1:"
+          stderrStr `shouldContain` "All checks passed"
 
     it "executes binary with regex and tcp checks on test server" $
-      withTestServer $ \port -> do
-        mExe <- findExecutable "zdun-exe"
-        case mExe of
-          Nothing -> pendingWith "zdun-exe binary not found in PATH"
-          Just exe -> do
-            (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "Example Domain@127.0.0.1:" ++ show port, "--tcp", "127.0.0.1:" ++ show port, "--", "echo", "BINARY_COMBINED_OK"] ""
-            code `shouldBe` ExitSuccess
-            stdoutStr `shouldContain` "BINARY_COMBINED_OK"
-            stderrStr `shouldContain` "[zdun]"
-            stderrStr `shouldContain` "All checks passed"
+      withTestServer $ \port ->
+        withZdunExe $ \exe -> do
+          (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "Example Domain@127.0.0.1:" ++ show port, "--tcp", "127.0.0.1:" ++ show port, "--", "echo", "BINARY_COMBINED_OK"] ""
+          code `shouldBe` ExitSuccess
+          stdoutStr `shouldContain` "BINARY_COMBINED_OK"
+          stderrStr `shouldContain` "[zdun]"
+          stderrStr `shouldContain` "All checks passed"
 
     it "executes binary and fails on regex mismatch with timeout" $
-      withTestServer $ \port -> do
-        mExe <- findExecutable "zdun-exe"
-        case mExe of
-          Nothing -> pendingWith "zdun-exe binary not found in PATH"
-          Just exe -> do
-            (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-t", "500ms", "--http", "NoSuchContentShouldFail@127.0.0.1:" ++ show port, "--", "echo", "SHOULD_NOT_EXECUTE"] ""
-            code `shouldBe` ExitFailure 1
-            isInfixOf "SHOULD_NOT_EXECUTE" stdoutStr `shouldBe` False
-            stderrStr `shouldContain` "Some checks failed"
+      withTestServer $ \port ->
+        withZdunExe $ \exe -> do
+          (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-t", "500ms", "--http", "NoSuchContentShouldFail@127.0.0.1:" ++ show port, "--", "echo", "SHOULD_NOT_EXECUTE"] ""
+          code `shouldBe` ExitFailure 1
+          isInfixOf "SHOULD_NOT_EXECUTE" stdoutStr `shouldBe` False
+          stderrStr `shouldContain` "Some checks failed"
 
   describe "verbose logging flag (-v)" $ do
     it "prints progress and success logs to stderr when -v is enabled" $
-      withTestServer $ \port -> do
-        mExe <- findExecutable "zdun-exe"
-        case mExe of
-          Nothing -> pendingWith "zdun-exe binary not found in PATH"
-          Just exe -> do
-            (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "127.0.0.1:" ++ show port, "--", "true"] ""
-            code `shouldBe` ExitSuccess
-            stderrStr `shouldContain` "[zdun]"
-            stderrStr `shouldContain` "Running 127.0.0.1:"
-            stderrStr `shouldContain` ("127.0.0.1:" ++ show port ++ " OK")
-            stderrStr `shouldContain` "All checks passed"
-
-    it "prints error logs to stderr when -v is enabled and TCP check fails" $ do
-      mExe <- findExecutable "zdun-exe"
-      case mExe of
-        Nothing -> pendingWith "zdun-exe binary not found in PATH"
-        Just exe -> do
-          (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "-t", "500ms", "--tcp", "127.0.0.1:54321", "--", "true"] ""
-          code `shouldBe` ExitFailure 1
+      withTestServer $ \port ->
+        withZdunExe $ \exe -> do
+          (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "127.0.0.1:" ++ show port, "--", "true"] ""
+          code `shouldBe` ExitSuccess
           stderrStr `shouldContain` "[zdun]"
-          stderrStr `shouldContain` "Running 127.0.0.1:54321"
-          stderrStr `shouldContain` "127.0.0.1:54321 error:"
-          stderrStr `shouldContain` "Some checks failed"
+          stderrStr `shouldContain` "Running 127.0.0.1:"
+          stderrStr `shouldContain` ("127.0.0.1:" ++ show port ++ " OK")
+          stderrStr `shouldContain` "All checks passed"
+
+    it "prints error logs to stderr when -v is enabled and TCP check fails" $
+      withZdunExe $ \exe -> do
+        (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "-t", "500ms", "--tcp", "127.0.0.1:54321", "--", "true"] ""
+        code `shouldBe` ExitFailure 1
+        stderrStr `shouldContain` "[zdun]"
+        stderrStr `shouldContain` "Running 127.0.0.1:54321"
+        stderrStr `shouldContain` "127.0.0.1:54321 error:"
+        stderrStr `shouldContain` "Some checks failed"
 
     it "prints error logs to stderr when -v is enabled and HTTP regex check fails" $
-      withTestServer $ \port -> do
-        mExe <- findExecutable "zdun-exe"
-        case mExe of
-          Nothing -> pendingWith "zdun-exe binary not found in PATH"
-          Just exe -> do
-            (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "-t", "500ms", "--http", "NonExistentRe@127.0.0.1:" ++ show port, "--", "true"] ""
-            code `shouldBe` ExitFailure 1
-            stderrStr `shouldContain` "[zdun]"
-            stderrStr `shouldContain` "Running NonExistentRe@127.0.0.1:"
-            stderrStr `shouldContain` "error: body did not match regex: NonExistentRe"
-            stderrStr `shouldContain` "Some checks failed"
+      withTestServer $ \port ->
+        withZdunExe $ \exe -> do
+          (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "-t", "500ms", "--http", "NonExistentRe@127.0.0.1:" ++ show port, "--", "true"] ""
+          code `shouldBe` ExitFailure 1
+          stderrStr `shouldContain` "[zdun]"
+          stderrStr `shouldContain` "Running NonExistentRe@127.0.0.1:"
+          stderrStr `shouldContain` "error: body did not match regex: NonExistentRe"
+          stderrStr `shouldContain` "Some checks failed"
 
     it "stays completely silent on stderr when -v is not specified and checks pass" $
-      withTestServer $ \port -> do
-        mExe <- findExecutable "zdun-exe"
-        case mExe of
-          Nothing -> pendingWith "zdun-exe binary not found in PATH"
-          Just exe -> do
-            (code, _, stderrStr) <- readProcessWithExitCode exe ["--http", "127.0.0.1:" ++ show port, "--", "true"] ""
-            code `shouldBe` ExitSuccess
-            isInfixOf "Running" stderrStr `shouldBe` False
-            isInfixOf "All checks passed" stderrStr `shouldBe` False
-            stderrStr `shouldBe` ""
+      withTestServer $ \port ->
+        withZdunExe $ \exe -> do
+          (code, _, stderrStr) <- readProcessWithExitCode exe ["--http", "127.0.0.1:" ++ show port, "--", "true"] ""
+          code `shouldBe` ExitSuccess
+          isInfixOf "Running" stderrStr `shouldBe` False
+          isInfixOf "All checks passed" stderrStr `shouldBe` False
+          stderrStr `shouldBe` ""
 
-    it "prints failure logs to stderr even without -v when a check fails" $ do
-      mExe <- findExecutable "zdun-exe"
-      case mExe of
-        Nothing -> pendingWith "zdun-exe binary not found in PATH"
-        Just exe -> do
-          (code, _, stderrStr) <- readProcessWithExitCode exe ["-t", "500ms", "--tcp", "127.0.0.1:54321", "--", "true"] ""
-          code `shouldBe` ExitFailure 1
-          stderrStr `shouldContain` "Some checks failed"
+    it "prints failure logs to stderr even without -v when a check fails" $
+      withZdunExe $ \exe -> do
+        (code, _, stderrStr) <- readProcessWithExitCode exe ["-t", "500ms", "--tcp", "127.0.0.1:54321", "--", "true"] ""
+        code `shouldBe` ExitFailure 1
+        stderrStr `shouldContain` "Some checks failed"
 
   describe "main / CLI tests with Russian body and regex" $ do
     it "succeeds with Russian substring match in body: --http 'Привет@host:port'" $
@@ -348,24 +317,18 @@ spec = do
           `shouldReturn` Left (ExitFailure 1)
 
     it "executes binary zdun-exe with Russian regex and Cyrillic command output" $
-      withTestServer $ \port -> do
-        mExe <- findExecutable "zdun-exe"
-        case mExe of
-          Nothing -> pendingWith "zdun-exe binary not found in PATH"
-          Just exe -> do
-            (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "готов к работе@127.0.0.1:" ++ show port, "--", "echo", "ТЕСТ_ПРОЙДЕН"] ""
-            code `shouldBe` ExitSuccess
-            stdoutStr `shouldContain` "ТЕСТ_ПРОЙДЕН"
-            stderrStr `shouldContain` "[zdun]"
-            stderrStr `shouldContain` "All checks passed"
+      withTestServer $ \port ->
+        withZdunExe $ \exe -> do
+          (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "готов к работе@127.0.0.1:" ++ show port, "--", "echo", "ТЕСТ_ПРОЙДЕН"] ""
+          code `shouldBe` ExitSuccess
+          stdoutStr `shouldContain` "ТЕСТ_ПРОЙДЕН"
+          stderrStr `shouldContain` "[zdun]"
+          stderrStr `shouldContain` "All checks passed"
 
     it "executes binary zdun-exe and fails when Russian regex does not match" $
-      withTestServer $ \port -> do
-        mExe <- findExecutable "zdun-exe"
-        case mExe of
-          Nothing -> pendingWith "zdun-exe binary not found in PATH"
-          Just exe -> do
-            (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-t", "500ms", "--http", "НенайденныйПаттерн123@127.0.0.1:" ++ show port, "--", "echo", "НЕ_ДОЛЖНО_БЫТЬ"] ""
-            code `shouldBe` ExitFailure 1
-            isInfixOf "НЕ_ДОЛЖНО_БЫТЬ" stdoutStr `shouldBe` False
-            stderrStr `shouldContain` "Some checks failed"
+      withTestServer $ \port ->
+        withZdunExe $ \exe -> do
+          (code, stdoutStr, stderrStr) <- readProcessWithExitCode exe ["-t", "500ms", "--http", "НенайденныйПаттерн123@127.0.0.1:" ++ show port, "--", "echo", "НЕ_ДОЛЖНО_БЫТЬ"] ""
+          code `shouldBe` ExitFailure 1
+          isInfixOf "НЕ_ДОЛЖНО_БЫТЬ" stdoutStr `shouldBe` False
+          stderrStr `shouldContain` "Some checks failed"

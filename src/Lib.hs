@@ -20,12 +20,14 @@ import Data.Time.Clock (NominalDiffTime, diffUTCTime, getCurrentTime)
 import Data.Time.Format (defaultTimeLocale, formatTime)
 import Data.Version (showVersion)
 import Http (checkHttp)
+import Network.HTTP.Client (newManager)
+import Network.HTTP.Client.TLS (tlsManagerSettings)
 import qualified Options.Applicative as OA
 import Paths_zdun (version)
 import Probes (CheckResult (..), worker)
 import System.Environment (getArgs)
 import System.Exit (ExitCode (ExitFailure, ExitSuccess), exitWith)
-import System.IO (hPutStrLn, stderr)
+import System.IO (hPutStrLn, stderr, stdout)
 import System.Posix.Process (executeFile)
 import Tcp (isPortOpen)
 import qualified Text.ParserCombinators.ReadP as ReadP
@@ -95,7 +97,7 @@ durationParser = OA.eitherReader parseDuration
 printLog :: MVar () -> String -> IO ()
 printLog logLock msg = withMVar logLock $ \_ -> do
   ts <- formatTime defaultTimeLocale "%H:%M:%S" <$> getCurrentTime
-  hPutStrLn stderr $ "[zdun] [" ++ ts ++ "] " ++ msg
+  hPutStrLn stderr $ "[zdun] [" <> ts <> "] " <> msg
 
 -- | Runs readiness checks for parsed options.
 -- Returns Right (cmd, args) if all checks pass.
@@ -107,8 +109,9 @@ runWithOptions options =
       hPutStrLn stderr "[zdun] command after -- is not specified"
       pure $ Left $ ExitFailure 1
     cmd : args -> do
+      manager <- newManager tlsManagerSettings
       let tcpChecks = [(name, isPortOpen name) | name <- optTcp options]
-          httpChecks = [(name, checkHttp name) | name <- optHttp options]
+          httpChecks = [(name, checkHttp manager name) | name <- optHttp options]
           allChecks = tcpChecks ++ httpChecks
       logLock <- newMVar ()
       let logMsg = if optVerbose options then printLog logLock else const (pure ())
@@ -139,7 +142,7 @@ runApp args =
       pure (Left exitCode)
     OA.CompletionInvoked compl -> do
       msg <- OA.execCompletion compl "zdun"
-      hPutStrLn stderr msg
+      hPutStrLn stdout msg
       pure (Left ExitSuccess)
 
 -- | Default main implementation which executes the command on success or exits with the error code.

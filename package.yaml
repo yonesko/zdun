@@ -35,7 +35,6 @@ ghc-options:
   - -Wredundant-constraints
 
 default-extensions:
-  - RecordWildCards
   - OverloadedStrings
   - ScopedTypeVariables
 
@@ -64,10 +63,6 @@ executables:
       - -with-rtsopts=-N
     dependencies:
       - zdun
-      - optparse-applicative
-      - unix
-      - async
-      - split
 
 tests:
   zdun-test:

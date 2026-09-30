@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module Http
   ( checkHttp,
     shortHttpError,
@@ -14,16 +12,15 @@ import qualified Data.Text.Encoding.Error as TE
 import Network.HTTP.Client
   ( HttpException (HttpExceptionRequest, InvalidUrlException),
     HttpExceptionContent (..),
+    Manager,
     Request (method, responseTimeout),
     Response (responseStatus),
     brConsume,
-    newManager,
     parseRequest,
     responseBody,
     responseTimeoutMicro,
     withResponse,
   )
-import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types.Status (statusCode)
 import Probes (CheckResult (..), seconds)
 import Tcp (shortSocketError)
@@ -48,26 +45,28 @@ shortHttpError (HttpExceptionRequest _ content) = case content of
   StatusCodeException resp _ -> "HTTP status " ++ show (statusCode $ responseStatus resp)
   ResponseTimeout -> "Response timeout"
   ConnectionTimeout -> "Connection timeout"
-  ConnectionFailure e -> case fromException e of
-    Just (ioe :: IOException) -> shortSocketError ioe
-    Nothing -> unwords . lines . displayException $ e
+  ConnectionFailure e -> handleSomeException e
   ConnectionClosed -> "Connection closed"
   InvalidStatusLine bs -> "Invalid status line: " ++ show bs
   InvalidHeader bs -> "Invalid header: " ++ show bs
-  InternalException e -> case fromException e of
-    Just (ioe :: IOException) -> shortSocketError ioe
-    Nothing -> unwords . lines . displayException $ e
+  InternalException e -> handleSomeException e
   NoResponseDataReceived -> "No response data received"
   TlsNotSupported -> "TLS not supported"
   other -> unwords . lines . show $ other
+  where
+    handleSomeException e = case fromException e of
+      Just (ioe :: IOException) -> shortSocketError ioe
+      Nothing -> unwords . lines . displayException $ e
 
 -- | Единый метод для всех HTTP проверок:
 -- 1. Если передано "url" — проверяет статус 200 OK (тело не читается).
 -- 2. Если передано "regex@url" — проверяет статус 200 OK и совпадение всего тела ответа с регуляркой.
-checkHttp :: String -> IO CheckResult
-checkHttp rawTarget = do
+--
+-- Принимает уже созданный Manager — его нужно создать один раз (через newManager) и переиспользовать,
+-- чтобы избежать утечки файловых дескрипторов при повторных вызовах в workerLoop.
+checkHttp :: Manager -> String -> IO CheckResult
+checkHttp manager rawTarget = do
   let (mRegex, url) = parseHttpTarget rawTarget
-  manager <- newManager tlsManagerSettings
 
   -- Ловим только сетевые/HTTP ошибки, НЕ перехватывая асинхронный Timeout и Ctrl+C!
   mReq <- try (parseRequest url) :: IO (Either HttpException Request)
