@@ -13,10 +13,11 @@ where
 
 import Control.Applicative (Alternative ((<|>)), many, some, (<**>))
 import Control.Concurrent.Async (mapConcurrently)
-import Control.Concurrent.MVar (newMVar, withMVar)
+import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Monad (when)
 import Data.Char (isDigit)
 import Data.Time.Clock (NominalDiffTime, diffUTCTime, getCurrentTime)
+import Data.Time.Format (defaultTimeLocale, formatTime)
 import Data.Version (showVersion)
 import Http (checkHttp)
 import qualified Options.Applicative as OA
@@ -91,6 +92,11 @@ opts =
 durationParser :: OA.ReadM NominalDiffTime
 durationParser = OA.eitherReader parseDuration
 
+printLog :: MVar () -> String -> IO ()
+printLog logLock msg = withMVar logLock $ \_ -> do
+  ts <- formatTime defaultTimeLocale "%H:%M:%S" <$> getCurrentTime
+  hPutStrLn stderr $ "[zdun] " <> msg
+
 -- | Runs readiness checks for parsed options.
 -- Returns Right (cmd, args) if all checks pass.
 -- Returns Left (ExitFailure 1) if checks fail or command is missing.
@@ -98,14 +104,14 @@ runWithOptions :: Options -> IO (Either ExitCode (FilePath, [String]))
 runWithOptions options =
   case optRest options of
     [] -> do
-      hPutStrLn stderr "[zdun] command after -- is not specified"
+      hPutStrLn stderr "command after -- is not specified"
       pure $ Left $ ExitFailure 1
     cmd : args -> do
-      let tcpChecks  = [(name, isPortOpen name) | name <- optTcp options]
+      let tcpChecks = [(name, isPortOpen name) | name <- optTcp options]
           httpChecks = [(name, checkHttp name) | name <- optHttp options]
-          allChecks  = tcpChecks ++ httpChecks
+          allChecks = tcpChecks ++ httpChecks
       logLock <- newMVar ()
-      let logMsg = if optVerbose options then \msg -> withMVar logLock $ \_ -> hPutStrLn stderr msg else const (pure ())
+      let logMsg = if optVerbose options then printLog logLock else const (pure ())
       start <- getCurrentTime
       checkResults <-
         mapConcurrently
@@ -116,10 +122,10 @@ runWithOptions options =
           failedChecks = [name | (name, Err _) <- checkResults]
       if null failedChecks
         then do
-          when (optVerbose options) $ hPutStrLn stderr $ "[zdun] All checks passed in " <> show diff
+          when (optVerbose options) $ printLog logLock $ "All checks passed in " <> show diff
           pure $ Right (cmd, args)
         else do
-          hPutStrLn stderr $ unwords ["[zdun] Some checks failed in", show diff ++ ":", unwords failedChecks]
+          printLog logLock $ unwords ["Some checks failed in", show diff ++ ":", unwords failedChecks]
           pure $ Left $ ExitFailure 1
 
 -- | Parses command-line arguments and runs checks, returning either an ExitCode or the target command and args.
