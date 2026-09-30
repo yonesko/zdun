@@ -25,7 +25,7 @@ import Network.HTTP.Client
   )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types.Status (statusCode)
-import Probes (CheckResult (..))
+import Probes (CheckResult (..), seconds)
 import Tcp (shortSocketError)
 import Text.Regex.TDFA ((=~))
 import Text.Regex.TDFA.Text ()
@@ -45,21 +45,21 @@ parseHttpTarget raw =
 shortHttpError :: HttpException -> String
 shortHttpError (InvalidUrlException _ reason) = "Invalid URL: " ++ reason
 shortHttpError (HttpExceptionRequest _ content) = case content of
-  StatusCodeException resp _ -> "HTTP status " ++ show (statusCode (responseStatus resp))
+  StatusCodeException resp _ -> "HTTP status " ++ show (statusCode $ responseStatus resp)
   ResponseTimeout -> "Response timeout"
   ConnectionTimeout -> "Connection timeout"
   ConnectionFailure e -> case fromException e of
     Just (ioe :: IOException) -> shortSocketError ioe
-    Nothing -> unwords (lines (displayException e))
+    Nothing -> unwords . lines . displayException $ e
   ConnectionClosed -> "Connection closed"
   InvalidStatusLine bs -> "Invalid status line: " ++ show bs
   InvalidHeader bs -> "Invalid header: " ++ show bs
   InternalException e -> case fromException e of
     Just (ioe :: IOException) -> shortSocketError ioe
-    Nothing -> unwords (lines (displayException e))
+    Nothing -> unwords . lines . displayException $ e
   NoResponseDataReceived -> "No response data received"
   TlsNotSupported -> "TLS not supported"
-  other -> unwords (lines (show other))
+  other -> unwords . lines . show $ other
 
 -- | Единый метод для всех HTTP проверок:
 -- 1. Если передано "url" — проверяет статус 200 OK (тело не читается).
@@ -80,26 +80,18 @@ checkHttp rawTarget = do
                 responseTimeout = responseTimeoutMicro (seconds 2)
               }
       res <-
-        try
-          ( withResponse req manager $ \resp -> do
-              let code = statusCode (responseStatus resp)
-              if code /= 200
-                then pure $ Err ("status " ++ show code ++ " (expected 200)")
-                else case mRegex of
-                  Nothing -> pure Ok
-                  Just regexPat -> do
-                    chunks <- brConsume (responseBody resp)
-                    let bodyText = TE.decodeUtf8With TE.lenientDecode (BS.concat chunks)
-                    let matched = (bodyText =~ regexPat) :: Bool
-                    if matched
-                      then pure Ok
-                      else pure $ Err ("body did not match regex: " ++ regexPat)
-          ) ::
-          IO (Either HttpException CheckResult)
+        try $
+          withResponse req manager $ \resp -> do
+            let code = statusCode $ responseStatus resp
+            if code /= 200
+              then pure $ Err $ "status " ++ show code ++ " (expected 200)"
+              else case mRegex of
+                Nothing -> pure Ok
+                Just regexPat -> do
+                  chunks <- brConsume $ responseBody resp
+                  let bodyText = TE.decodeUtf8With TE.lenientDecode (BS.concat chunks)
+                  if bodyText =~ regexPat
+                    then pure Ok
+                    else pure $ Err $ "body did not match regex: " ++ regexPat
 
-      pure $ case res of
-        Left err -> Err (shortHttpError err)
-        Right outcome -> outcome
-
-seconds :: Int -> Int
-seconds n = n * 1000000
+      pure $ either (Err . shortHttpError) id res

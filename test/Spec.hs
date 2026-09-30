@@ -54,7 +54,7 @@ withTestServerBody bodyText action = do
         [ "HTTP/1.1 200 OK\r\n",
           "Content-Type: text/plain; charset=utf-8\r\n",
           "Content-Length: ",
-          BS8.pack (show (BS.length bodyBytes)),
+          BS8.pack $ show $ BS.length bodyBytes,
           "\r\nConnection: close\r\n\r\n",
           bodyBytes
         ]

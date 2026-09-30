@@ -11,14 +11,13 @@ module Lib
   )
 where
 
-import Control.Applicative (many, some, (<**>))
+import Control.Applicative (Alternative ((<|>)), many, some, (<**>))
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.MVar (newMVar, withMVar)
 import Control.Monad (when)
 import Data.Char (isDigit)
 import Data.Time.Clock (NominalDiffTime, diffUTCTime, getCurrentTime)
 import Data.Version (showVersion)
-import GHC.Base (Alternative ((<|>)))
 import Http (checkHttp)
 import qualified Options.Applicative as OA
 import Paths_zdun (version)
@@ -37,7 +36,7 @@ parseDuration "" = Right 0
 parseDuration "0" = Right 0
 parseDuration s =
   case [val | (val, "") <- ReadP.readP_to_S (durationP <* ReadP.eof) s] of
-    (val : _) -> Right val
+    val : _ -> Right val
     [] -> Left ("Invalid duration " <> s)
   where
     durationP :: ReadP.ReadP NominalDiffTime
@@ -49,11 +48,8 @@ parseDuration s =
         numberP = do
           digits <- ReadP.munch1 isDigit
           mFrac <- ReadP.option "" (ReadP.char '.' *> ReadP.munch1 isDigit)
-          pure $ case mFrac of
-            "" -> fromInteger (read digits)
-            f -> case readMaybe (digits ++ "." ++ f) of
-              Just (d :: Double) -> realToFrac d
-              Nothing -> 0
+          let str = if null mFrac then digits else digits ++ '.' : mFrac
+          pure $ maybe 0 realToFrac (readMaybe str :: Maybe Double)
 
         unitP =
           3600 <$ ReadP.char 'h'
@@ -80,7 +76,7 @@ optsInfo =
           (OA.long "version" <> OA.help "Show version information")
     )
     ( OA.fullDesc
-        <> OA.progDesc "Zdun - utility to exec a command after waiting for rediness probes to success or timeout"
+        <> OA.progDesc "Zdun - utility to exec a command after waiting for readiness probes to succeed or timeout"
     )
 
 opts :: OA.Parser Options
@@ -103,31 +99,28 @@ runWithOptions options =
   case optRest options of
     [] -> do
       hPutStrLn stderr "[zdun] command after -- is not specified"
-      pure (Left (ExitFailure 1))
-    (cmd : args) -> do
-      let tcpChecks = [(name, isPortOpen name) | name <- optTcp options]
-      let httpChecks = [(name, checkHttp name) | name <- optHttp options]
-      let allChecks = tcpChecks ++ httpChecks
+      pure $ Left $ ExitFailure 1
+    cmd : args -> do
+      let tcpChecks  = [(name, isPortOpen name) | name <- optTcp options]
+          httpChecks = [(name, checkHttp name) | name <- optHttp options]
+          allChecks  = tcpChecks ++ httpChecks
       logLock <- newMVar ()
       let logMsg = if optVerbose options then \msg -> withMVar logLock $ \_ -> hPutStrLn stderr msg else const (pure ())
       start <- getCurrentTime
       checkResults <-
         mapConcurrently
-          ( \(name, action) -> do
-              res <- worker logMsg name action (optTimeout options)
-              pure (name, res)
-          )
+          (\(name, action) -> (,) name <$> worker logMsg name action (optTimeout options))
           allChecks
       end <- getCurrentTime
       let diff = diffUTCTime end start
-      let failedChecks = [name | (name, Err _) <- checkResults]
-      if not (null failedChecks)
+          failedChecks = [name | (name, Err _) <- checkResults]
+      if null failedChecks
         then do
-          hPutStrLn stderr $ unwords ["[zdun] Some checks failed in", show diff ++ ":", unwords failedChecks]
-          pure (Left (ExitFailure 1))
+          when (optVerbose options) $ hPutStrLn stderr $ "[zdun] All checks passed in " <> show diff
+          pure $ Right (cmd, args)
         else do
-          when (optVerbose options) (hPutStrLn stderr $ "[zdun] All checks passed in " <> show diff)
-          pure (Right (cmd, args))
+          hPutStrLn stderr $ unwords ["[zdun] Some checks failed in", show diff ++ ":", unwords failedChecks]
+          pure $ Left $ ExitFailure 1
 
 -- | Parses command-line arguments and runs checks, returning either an ExitCode or the target command and args.
 runApp :: [String] -> IO (Either ExitCode (FilePath, [String]))

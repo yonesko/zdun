@@ -1,6 +1,7 @@
 module Probes
   ( worker,
     CheckResult (..),
+    seconds,
   )
 where
 
@@ -20,11 +21,11 @@ worker :: (String -> IO ()) -> String -> IO CheckResult -> NominalDiffTime -> IO
 worker logMsg name action timeoutDiff
   | timeoutDiff <= 0 = workerLoop logMsg name action -- 0 или меньше = ждать бесконечно
   | otherwise = do
-      res <- timeout (diffToMicroseconds timeoutDiff) (workerLoop logMsg name action)
+      res <- timeout (diffToMicroseconds timeoutDiff) $ workerLoop logMsg name action
       case res of
         Nothing -> do
           logMsg $ "[zdun] " <> name <> " timeout"
-          pure (Err "timeout")
+          pure $ Err "timeout"
         Just r -> pure r
 
 workerLoop :: (String -> IO ()) -> String -> IO CheckResult -> IO CheckResult
