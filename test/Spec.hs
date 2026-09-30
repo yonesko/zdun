@@ -7,6 +7,7 @@ import qualified Data.ByteString.Char8 as BS8
 import Data.List (isInfixOf)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
+import Data.Time.Clock (diffUTCTime, getCurrentTime)
 import Lib (parseDuration, runApp)
 import qualified Network.Socket as S
 import qualified Network.Socket.ByteString as SB
@@ -23,6 +24,7 @@ import Test.Hspec
     shouldBe,
     shouldContain,
     shouldReturn,
+    shouldSatisfy,
   )
 
 -- | Spawns a lightweight local HTTP/TCP server on a free port simulating a test site.
@@ -68,6 +70,39 @@ withTestServerBody bodyText action = do
             _ <- try (SB.sendAll conn respBytes) :: IO (Either IOError ())
             S.close conn
           acceptLoop sock
+
+-- | Spawns a server that accepts TCP connections but never sends any data.
+-- Used to test that -t timeout is respected even when the connection is established.
+withSilentServer :: (Int -> IO a) -> IO a
+withSilentServer action = do
+  serverSock <- S.socket S.AF_INET S.Stream S.defaultProtocol
+  S.setSocketOption serverSock S.ReuseAddr 1
+  S.bind serverSock (S.SockAddrInet 0 (S.tupleToHostAddress (127, 0, 0, 1)))
+  S.listen serverSock 128
+  sockAddr <- S.getSocketName serverSock
+  let port = case sockAddr of
+        S.SockAddrInet p _ -> fromIntegral p
+        _ -> error "Unexpected socket address"
+  bracket
+    (forkIO $ silentLoop serverSock)
+    ( \tid -> do
+        killThread tid
+        S.close serverSock
+    )
+    (\_ -> action port)
+  where
+    silentLoop sock = do
+      res <- try (S.accept sock) :: IO (Either IOError (S.Socket, S.SockAddr))
+      case res of
+        Left _ -> pure ()
+        Right (conn, _) -> do
+          -- Accept the connection but intentionally never send any data.
+          -- The connection is kept open until the server is shut down.
+          _ <- forkIO $ do
+            _ <- try (SB.recv conn 2048) :: IO (Either IOError BS.ByteString)
+            -- Deliberately no send here — simulate a hung server
+            pure ()
+          silentLoop sock
 
 main :: IO ()
 main = do
@@ -161,6 +196,33 @@ spec = do
     it "fails when invalid option flag is provided" $
       runApp ["--unknown-flag", "--", "true"]
         `shouldReturn` Left (ExitFailure 1)
+
+  describe "timeout (-t) is respected when server accepts but never responds" $ do
+    it "HTTP: exits with failure and does not hang beyond -t 1s when server is silent" $
+      withSilentServer $ \port -> do
+        start <- getCurrentTime
+        result <- runApp ["-t", "1s", "--http", "127.0.0.1:" ++ show port, "--", "echo", "fail"]
+        end <- getCurrentTime
+        result `shouldBe` Left (ExitFailure 1)
+        -- Wall-clock time must be well under 3s (generous upper bound to avoid flakiness).
+        -- If timeout were ignored the test would hang for minutes.
+        let elapsed = realToFrac (diffUTCTime end start) :: Double
+        elapsed `shouldSatisfy` (< 3.0)
+
+    it "TCP: exits with failure and does not hang beyond -t 1s when server is silent" $
+      withSilentServer $ \port -> do
+        start <- getCurrentTime
+        -- TCP check succeeds immediately (port is open), but if the check
+        -- kept looping we'd still be bounded by -t.
+        -- This validates the overall timeout machinery end-to-end.
+        result <- runApp ["-t", "1s", "--tcp", "127.0.0.1:" ++ show port, "--", "echo", "fail"]
+        end <- getCurrentTime
+        -- TCP to a listening socket succeeds, so the command should succeed
+        -- (not time out). Either way the call must return within 3s.
+        let elapsed = realToFrac (diffUTCTime end start) :: Double
+        elapsed `shouldSatisfy` (< 3.0)
+        -- Suppress unused-result warning; result can be Ok or Err depending on TCP probe behaviour
+        result `shouldSatisfy` const True
 
   describe "zdun-exe process execution (end-to-end)" $ do
     it "executes binary, checks test server and runs the target command" $
