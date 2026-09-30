@@ -207,7 +207,31 @@ spec = do
             (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "--http", "127.0.0.1:" ++ show port, "--", "true"] ""
             code `shouldBe` ExitSuccess
             stderrStr `shouldContain` "[zdun] Running 127.0.0.1:"
+            stderrStr `shouldContain` ("[zdun] 127.0.0.1:" ++ show port ++ " OK")
             stderrStr `shouldContain` "[zdun] All checks passed"
+
+    it "prints error logs to stderr when -v is enabled and TCP check fails" $ do
+      mExe <- findExecutable "zdun-exe"
+      case mExe of
+        Nothing -> pendingWith "zdun-exe binary not found in PATH"
+        Just exe -> do
+          (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "-t", "500ms", "--tcp", "127.0.0.1:54321", "--", "true"] ""
+          code `shouldBe` ExitFailure 1
+          stderrStr `shouldContain` "[zdun] Running 127.0.0.1:54321"
+          stderrStr `shouldContain` "[zdun] 127.0.0.1:54321 error:"
+          stderrStr `shouldContain` "Some checks failed"
+
+    it "prints error logs to stderr when -v is enabled and HTTP regex check fails" $
+      withTestServer $ \port -> do
+        mExe <- findExecutable "zdun-exe"
+        case mExe of
+          Nothing -> pendingWith "zdun-exe binary not found in PATH"
+          Just exe -> do
+            (code, _, stderrStr) <- readProcessWithExitCode exe ["-v", "-t", "500ms", "--http", "NonExistentRe@127.0.0.1:" ++ show port, "--", "true"] ""
+            code `shouldBe` ExitFailure 1
+            stderrStr `shouldContain` "[zdun] Running NonExistentRe@127.0.0.1:"
+            stderrStr `shouldContain` "error: body did not match regex: NonExistentRe"
+            stderrStr `shouldContain` "Some checks failed"
 
     it "stays completely silent on stderr when -v is not specified and checks pass" $
       withTestServer $ \port -> do

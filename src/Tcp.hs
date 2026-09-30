@@ -17,7 +17,6 @@ import Network.Socket
     getAddrInfo,
     socket,
   )
-import System.IO (hPutStrLn, stderr)
 import System.Timeout (timeout)
 
 seconds :: Int -> Int
@@ -34,18 +33,14 @@ parseTarget raw =
         (host, ':' : port) | not (null host) && not (null port) -> Just (host, port)
         _ -> Nothing
 
-isPortOpen :: String -> IO Bool
+isPortOpen :: String -> IO (Either String ())
 isPortOpen target = case parseTarget target of
-  Nothing -> do
-    hPutStrLn stderr $ "[zdun] Invalid target format: " ++ target ++ " (expected host:port or tcp://host:port)"
-    pure False
+  Nothing -> pure $ Left ("Invalid target format: " ++ target ++ " (expected host:port or tcp://host:port)")
   Just (host, port) -> do
     res <- timeout (seconds 2) check
-    case res of
-      Nothing -> do
-        hPutStrLn stderr $ "[zdun] Timeout connecting to " ++ host ++ ":" ++ port
-        pure False
-      Just ok -> pure ok
+    pure $ case res of
+      Nothing -> Left ("Timeout connecting to " ++ host ++ ":" ++ port)
+      Just r -> r
     where
       hints = defaultHints {addrSocketType = Stream}
 
@@ -53,17 +48,13 @@ isPortOpen target = case parseTarget target of
         result <- try $ do
           addrs <- getAddrInfo (Just hints) (Just host) (Just port)
           case addrs of
-            [] -> do
-              hPutStrLn stderr $ "[zdun] Host not found: " ++ host
-              pure False
+            [] -> pure (Left ("Host not found: " ++ host))
             (serverAddr : _) ->
               bracket
                 (socket (addrFamily serverAddr) (addrSocketType serverAddr) (addrProtocol serverAddr))
                 close
-                (\sock -> connect sock (addrAddress serverAddr) >> pure True)
+                (\sock -> connect sock (addrAddress serverAddr) >> pure (Right ()))
 
         case result of
-          Left (err :: IOException) -> do
-            hPutStrLn stderr $ "[zdun] " ++ host ++ ":" ++ port ++ " error: " ++ displayException err
-            pure False
-          Right ok -> pure ok
+          Left (err :: IOException) -> pure (Left (unwords (lines (displayException err))))
+          Right r -> pure r

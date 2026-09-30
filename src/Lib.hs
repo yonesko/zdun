@@ -114,13 +114,13 @@ runWithOptions options =
       checkResults <-
         mapConcurrently
           ( \(name, action) -> do
-              ok <- worker logMsg name action (optTimeout options)
-              pure (name, ok)
+              res <- worker logMsg name action (optTimeout options)
+              pure (name, res)
           )
           allChecks
       end <- getCurrentTime
       let diff = diffUTCTime end start
-      let failedChecks = [name | (name, False) <- checkResults]
+      let failedChecks = [name | (name, Left _) <- checkResults]
       if not (null failedChecks)
         then do
           hPutStrLn stderr $ unwords ["[zdun] Some checks failed in", show diff ++ ":", unwords failedChecks]

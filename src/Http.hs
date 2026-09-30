@@ -2,6 +2,7 @@
 
 module Http
   ( checkHttp,
+    shortHttpError,
   )
 where
 
@@ -12,6 +13,7 @@ import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TE
 import Network.HTTP.Client
   ( HttpException (HttpExceptionRequest, InvalidUrlException),
+    HttpExceptionContent (..),
     Request (method, responseTimeout),
     Response (responseStatus),
     brConsume,
@@ -23,7 +25,6 @@ import Network.HTTP.Client
   )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types.Status (statusCode)
-import System.IO (hPutStrLn, stderr)
 import Text.Regex.TDFA ((=~))
 import Text.Regex.TDFA.Text ()
 
@@ -38,10 +39,26 @@ parseHttpTarget raw =
         | otherwise = "http://" ++ urlPart
    in (mRe, normalizedUrl)
 
+-- | Extracts a concise, single-line error description from an HttpException.
+shortHttpError :: HttpException -> String
+shortHttpError (InvalidUrlException _ reason) = "Invalid URL: " ++ reason
+shortHttpError (HttpExceptionRequest _ content) = case content of
+  StatusCodeException resp _ -> "HTTP status " ++ show (statusCode (responseStatus resp))
+  ResponseTimeout -> "Response timeout"
+  ConnectionTimeout -> "Connection timeout"
+  ConnectionFailure e -> unwords (lines (displayException e))
+  ConnectionClosed -> "Connection closed"
+  InvalidStatusLine bs -> "Invalid status line: " ++ show bs
+  InvalidHeader bs -> "Invalid header: " ++ show bs
+  InternalException e -> unwords (lines (displayException e))
+  NoResponseDataReceived -> "No response data received"
+  TlsNotSupported -> "TLS not supported"
+  other -> unwords (lines (show other))
+
 -- | Единый метод для всех HTTP проверок:
 -- 1. Если передано "url" — проверяет статус 200 OK (тело не читается).
 -- 2. Если передано "regex@url" — проверяет статус 200 OK и совпадение всего тела ответа с регуляркой.
-checkHttp :: String -> IO Bool
+checkHttp :: String -> IO (Either String ())
 checkHttp rawTarget = do
   let (mRegex, url) = parseHttpTarget rawTarget
   manager <- newManager tlsManagerSettings
@@ -49,9 +66,7 @@ checkHttp rawTarget = do
   -- Ловим только сетевые/HTTP ошибки, НЕ перехватывая асинхронный Timeout и Ctrl+C!
   mReq <- try (parseRequest url) :: IO (Either HttpException Request)
   case mReq of
-    Left err -> do
-      hPutStrLn stderr $ "[zdun] Invalid URL: " ++ url ++ " (" ++ displayException err ++ ")"
-      pure False
+    Left err -> pure $ Left (shortHttpError err)
     Right initialReq -> do
       let req =
             initialReq
@@ -63,31 +78,22 @@ checkHttp rawTarget = do
           ( withResponse req manager $ \resp -> do
               let code = statusCode (responseStatus resp)
               if code /= 200
-                then do
-                  hPutStrLn stderr $ "[zdun] " ++ url ++ " returned status " ++ show code ++ " (expected 200)"
-                  pure False
+                then pure $ Left ("status " ++ show code ++ " (expected 200)")
                 else case mRegex of
-                  Nothing -> pure True
+                  Nothing -> pure (Right ())
                   Just regexPat -> do
                     chunks <- brConsume (responseBody resp)
                     let bodyText = TE.decodeUtf8With TE.lenientDecode (BS.concat chunks)
                     let matched = (bodyText =~ regexPat) :: Bool
                     if matched
-                      then pure True
-                      else do
-                        hPutStrLn stderr $ "[zdun] " ++ url ++ " body did not match regex: " ++ regexPat
-                        pure False
+                      then pure (Right ())
+                      else pure $ Left ("body did not match regex: " ++ regexPat)
           ) ::
-          IO (Either HttpException Bool)
+          IO (Either HttpException (Either String ()))
 
-      case res of
-        Left (HttpExceptionRequest _ content) -> do
-          hPutStrLn stderr $ "[zdun] HTTP error for " ++ url ++ ": " ++ unwords (lines (show content))
-          pure False
-        Left (InvalidUrlException _ reason) -> do
-          hPutStrLn stderr $ "[zdun] HTTP error for " ++ url ++ ": " ++ reason
-          pure False
-        Right ok -> pure ok
+      pure $ case res of
+        Left err -> Left (shortHttpError err)
+        Right outcome -> outcome
 
 seconds :: Int -> Int
 seconds n = n * 1000000
