@@ -75,6 +75,7 @@ tests:
     dependencies:
       - zdun
       - hspec
+      - process
       - unix
       - optparse-applicative
       - directory
