@@ -90,7 +90,7 @@ opts =
     <*> OA.switch (OA.short 'v' <> OA.help "Verbose")
     <*> many (OA.strOption (OA.long "tcp" <> OA.help "TCP connection check"))
     <*> many (OA.strOption (OA.long "http" <> OA.help "HTTP check: URL (for 200 OK) or regex@URL"))
-    <*> some (OA.strArgument (OA.metavar "--- CMD"))
+    <*> some (OA.strArgument (OA.metavar "-- CMD"))
 
 durationParser :: OA.ReadM NominalDiffTime
 durationParser = OA.eitherReader parseDuration
