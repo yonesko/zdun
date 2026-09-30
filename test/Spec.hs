@@ -86,9 +86,33 @@ withSilentServer = withBoundServer silentLoop
           _ <- forkIO $ do
             _ <- try (SB.recv conn 2048) :: IO (Either IOError BS.ByteString)
             -- Deliberately no send here — simulate a hung server.
-            -- The socket is still closed to avoid resource leaks.
+            -- Close connection on exit to prevent resource leaks.
             S.close conn
           silentLoop sock
+
+-- | Spawns a server that requires Basic Auth header, returning 200 OK only if Authorization header matches.
+withBasicAuthServer :: String -> (Int -> IO a) -> IO a
+withBasicAuthServer expectedAuth = withBoundServer acceptLoop
+  where
+    respOk = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
+    respUnauthorized = "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    acceptLoop sock = do
+      res <- try (S.accept sock) :: IO (Either IOError (S.Socket, S.SockAddr))
+      case res of
+        Left _ -> pure ()
+        Right (conn, _) -> do
+          _ <- forkIO $ do
+            mReq <- try (SB.recv conn 2048) :: IO (Either IOError BS.ByteString)
+            case mReq of
+              Right reqBytes
+                | BS8.pack ("Authorization: Basic " ++ expectedAuth) `BS.isInfixOf` reqBytes -> do
+                    _ <- try (SB.sendAll conn respOk) :: IO (Either IOError ())
+                    pure ()
+              _ -> do
+                _ <- try (SB.sendAll conn respUnauthorized) :: IO (Either IOError ())
+                pure ()
+            S.close conn
+          acceptLoop sock
 
 -- | Runs an action with the path to the zdun-exe binary,
 -- or marks the test as pending if the binary is not found in PATH.
@@ -172,6 +196,22 @@ spec = do
       withTestServer $ \port ->
         runApp ["-v", "-t", "5s", "--http", "127.0.0.1:" ++ show port, "--tcp", "127.0.0.1:" ++ show port, "--", "echo", "all-passed"]
           `shouldReturn` Right ("echo", ["all-passed"])
+
+    it "succeeds with basic auth in URL: --http http://admin:pass@127.0.0.1:port" $
+      withTestServer $ \port ->
+        runApp ["--http", "http://admin:pass@127.0.0.1:" ++ show port, "--", "echo", "auth-ok"]
+          `shouldReturn` Right ("echo", ["auth-ok"])
+
+    it "sends correct Basic Auth header from --http http://admin:pass@host:port" $
+      -- "admin:pass" in base64 is "YWRtaW46cGFzcw=="
+      withBasicAuthServer "YWRtaW46cGFzcw==" $ \port ->
+        runApp ["--http", "http://admin:pass@127.0.0.1:" ++ show port, "--", "echo", "auth-verified"]
+          `shouldReturn` Right ("echo", ["auth-verified"])
+
+    it "fails when Basic Auth credentials do not match within timeout (-t 500ms)" $
+      withBasicAuthServer "YWRtaW46cGFzcw==" $ \port ->
+        runApp ["-t", "500ms", "--http", "http://wrong:creds@127.0.0.1:" ++ show port, "--", "echo", "fail"]
+          `shouldReturn` Left (ExitFailure 1)
 
     it "fails and does not exec when body regex does not match within timeout (-t 500ms)" $
       withTestServer $ \port ->
