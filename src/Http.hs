@@ -6,7 +6,7 @@ module Http
   )
 where
 
-import Control.Exception (displayException, try)
+import Control.Exception (IOException, displayException, fromException, try)
 import qualified Data.ByteString as BS
 import Data.List (isPrefixOf)
 import qualified Data.Text.Encoding as TE
@@ -26,6 +26,7 @@ import Network.HTTP.Client
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types.Status (statusCode)
 import Probes (CheckResult (..))
+import Tcp (shortSocketError)
 import Text.Regex.TDFA ((=~))
 import Text.Regex.TDFA.Text ()
 
@@ -47,11 +48,15 @@ shortHttpError (HttpExceptionRequest _ content) = case content of
   StatusCodeException resp _ -> "HTTP status " ++ show (statusCode (responseStatus resp))
   ResponseTimeout -> "Response timeout"
   ConnectionTimeout -> "Connection timeout"
-  ConnectionFailure e -> unwords (lines (displayException e))
+  ConnectionFailure e -> case fromException e of
+    Just (ioe :: IOException) -> shortSocketError ioe
+    Nothing -> unwords (lines (displayException e))
   ConnectionClosed -> "Connection closed"
   InvalidStatusLine bs -> "Invalid status line: " ++ show bs
   InvalidHeader bs -> "Invalid header: " ++ show bs
-  InternalException e -> unwords (lines (displayException e))
+  InternalException e -> case fromException e of
+    Just (ioe :: IOException) -> shortSocketError ioe
+    Nothing -> unwords (lines (displayException e))
   NoResponseDataReceived -> "No response data received"
   TlsNotSupported -> "TLS not supported"
   other -> unwords (lines (show other))
@@ -90,7 +95,7 @@ checkHttp rawTarget = do
                       then pure Ok
                       else pure $ Err ("body did not match regex: " ++ regexPat)
           ) ::
-          IO (Either HttpException (CheckResult))
+          IO (Either HttpException CheckResult)
 
       pure $ case res of
         Left err -> Err (shortHttpError err)
