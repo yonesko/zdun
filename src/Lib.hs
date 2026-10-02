@@ -42,9 +42,7 @@ parseDuration s =
     val : _ -> Right val
     [] -> Left ("Invalid duration " <> s)
   where
-    durationP :: ReadP.ReadP NominalDiffTime
     durationP = sum <$> ReadP.many1 componentP
-
     componentP :: ReadP.ReadP NominalDiffTime
     componentP = (*) <$> numberP <*> unitP
       where
