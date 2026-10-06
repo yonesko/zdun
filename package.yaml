@@ -1,5 +1,5 @@
 name: zdun
-version: 1.0.0
+version: 2.0.0
 github: "githubuser/zdun"
 license: BSD-3-Clause
 author: "Author name here"
@@ -37,6 +37,8 @@ ghc-options:
 default-extensions:
   - OverloadedStrings
   - ScopedTypeVariables
+  - NumericUnderscores
+  - BlockArguments
 
 library:
   source-dirs: src
@@ -51,6 +53,7 @@ library:
     - text
     - optparse-applicative
     - unix
+    - mtl
 
 executables:
   zdun-exe:
@@ -74,10 +77,11 @@ tests:
     dependencies:
       - zdun
       - hspec
-      - process
-      - unix
-      - optparse-applicative
-      - directory
+      - QuickCheck
       - network
       - bytestring
       - text
+      - http-client
+      - http-client-tls
+    build-tools:
+      - hspec-discover
