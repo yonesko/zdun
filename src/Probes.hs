@@ -16,8 +16,8 @@ import Tcp (checkTcp)
 import Types
 
 runSingle :: Env -> Probe -> IO (Either String ())
-runSingle env (Probe (Tcp host port) check) = checkTcp env host port check
-runSingle manager (Probe (Http url) check) = checkHttp manager url check
+runSingle _ (Probe (Tcp host port) check) = checkTcp host port check
+runSingle env (Probe (Http url) check) = checkHttp env url check
 
 runLoop :: Env -> NominalDiffTime -> Probe -> IO (Either String ())
 runLoop env t p = do

@@ -49,7 +49,6 @@ library
     , http-client
     , http-client-tls
     , http-types
-    , mtl
     , network
     , optparse-applicative
     , regex-tdfa

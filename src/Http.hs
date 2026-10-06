@@ -4,9 +4,6 @@ module Http
 where
 
 import Control.Exception (IOException, displayException, fromException, try)
-import Control.Monad (forM_)
-import Control.Monad.Except (liftEither, runExceptT)
-import Control.Monad.IO.Class (liftIO)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TE
@@ -46,11 +43,11 @@ checkHttp env url check = do
   res <- try $ do
     initialReq <- parseRequest url
     let request = initialReq {responseTimeout = responseTimeoutMicro (seconds 2)}
-    withResponse request (envManager env) $ \response -> runExceptT $ do
-      liftEither $ checkStatus response
-      forM_ check $ \c -> do
-        body <- liftIO $ readBody response
-        liftEither $ checkContent c body
+    withResponse request (envManager env) $ \response ->
+      case checkStatus response of
+        Left err -> pure (Left err)
+        Right () -> maybe (pure (Right ())) (\c -> checkContent c <$> readBody response) check
+
   pure $ either (Left . shortHttpError) id res
   where
     checkStatus :: Response a -> Either String ()

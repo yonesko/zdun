@@ -32,10 +32,7 @@ import Test.Hspec
     shouldBe,
     shouldStartWith,
   )
-import Types (Check (..), Env (..))
-
-testEnv :: Env
-testEnv = Env (error "no manager") (\_ -> pure ())
+import Types (Check (..))
 
 spec :: Spec
 spec = do
@@ -43,30 +40,30 @@ spec = do
     describe "success" $ do
       it "connects to open TCP port" $ do
         withOpenPort $ \port -> do
-          res <- checkTcp testEnv "127.0.0.1" port Nothing
+          res <- checkTcp "127.0.0.1" port Nothing
           res `shouldBe` Right ()
 
     describe "timeout" $ do
       it "times out after 2s connecting to unresponsive port" $ do
         withUnresponsivePort $ \port -> do
-          res <- checkTcp testEnv "127.0.0.1" port Nothing
+          res <- checkTcp "127.0.0.1" port Nothing
           res `shouldBe` Left ("Timeout(2s) connecting to 127.0.0.1:" <> port)
 
     describe "failure" $ do
       it "fails on invalid service / port name" $ do
-        res <- checkTcp testEnv "127.0.0.1" "invalid-port" Nothing
+        res <- checkTcp "127.0.0.1" "invalid-port" Nothing
         case res of
           Left err -> err `shouldStartWith` "127.0.0.1:invalid-port: "
           Right () -> expectationFailure "expected connection to fail, but succeeded"
 
       it "fails on invalid service / port name with IPv6 host" $ do
-        res <- checkTcp testEnv "::1" "invalid-port" Nothing
+        res <- checkTcp "::1" "invalid-port" Nothing
         case res of
           Left err -> err `shouldStartWith` "[::1]:invalid-port: "
           Right () -> expectationFailure "expected connection to fail, but succeeded"
 
       it "fails on non-existent host" $ do
-        res <- checkTcp testEnv "nonexistent.example.invalid" "80" Nothing
+        res <- checkTcp "nonexistent.example.invalid" "80" Nothing
         case res of
           Left err -> err `shouldStartWith` "nonexistent.example.invalid:80: "
           Right () -> expectationFailure "expected connection to fail, but succeeded"
@@ -74,28 +71,28 @@ spec = do
     describe "content check (contains)" $ do
       it "succeeds when banner contains expected substring" $ do
         withBannerServer (TE.encodeUtf8 "220 mail.example.com ESMTP Postfix\r\n") $ \port -> do
-          res <- checkTcp testEnv "127.0.0.1" port (Just (Contains "220"))
+          res <- checkTcp "127.0.0.1" port (Just (Contains "220"))
           res `shouldBe` Right ()
 
       it "succeeds when banner contains UTF-8 substring" $ do
         withBannerServer (TE.encodeUtf8 "Привет мир\r\n") $ \port -> do
-          res <- checkTcp testEnv "127.0.0.1" port (Just (Contains "Привет"))
+          res <- checkTcp "127.0.0.1" port (Just (Contains "Привет"))
           res `shouldBe` Right ()
 
       it "fails when banner doesn't contain expected substring" $ do
         withBannerServer (TE.encodeUtf8 "220 mail.example.com ESMTP Postfix\r\n") $ \port -> do
-          res <- checkTcp testEnv "127.0.0.1" port (Just (Contains "PONG"))
+          res <- checkTcp "127.0.0.1" port (Just (Contains "PONG"))
           res `shouldBe` Left "response body doesn't contain substring"
 
     describe "content check (matches)" $ do
       it "succeeds when banner matches regex" $ do
         withBannerServer (TE.encodeUtf8 "220 mail.example.com ESMTP Postfix\r\n") $ \port -> do
-          res <- checkTcp testEnv "127.0.0.1" port (Just (Matches "^220.*ESMTP"))
+          res <- checkTcp "127.0.0.1" port (Just (Matches "^220.*ESMTP"))
           res `shouldBe` Right ()
 
       it "fails when banner doesn't match regex" $ do
         withBannerServer (TE.encodeUtf8 "220 mail.example.com ESMTP Postfix\r\n") $ \port -> do
-          res <- checkTcp testEnv "127.0.0.1" port (Just (Matches "^[0-9]{3} PONG"))
+          res <- checkTcp "127.0.0.1" port (Just (Matches "^[0-9]{3} PONG"))
           res `shouldBe` Left "response body doesn't match re"
 
 withBannerServer :: BS.ByteString -> (ServiceName -> IO a) -> IO a

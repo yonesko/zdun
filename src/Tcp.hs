@@ -24,7 +24,7 @@ import Network.Socket
 import Network.Socket.ByteString (recv)
 import System.Timeout (timeout)
 import Text.Regex.TDFA ((=~))
-import Types (Check (..), Env)
+import Types (Check (..))
 
 shortSocketError :: IOException -> String
 shortSocketError err =
@@ -32,8 +32,8 @@ shortSocketError err =
     "" -> unwords . lines . displayException $ err
     desc -> desc
 
-checkTcp :: Env -> HostName -> ServiceName -> Maybe Check -> IO (Either String ())
-checkTcp _ host port check = fromMaybe timeoutMsg <$> timeout 2_000_000 checkTcp'
+checkTcp :: HostName -> ServiceName -> Maybe Check -> IO (Either String ())
+checkTcp host port check = fromMaybe timeoutMsg <$> timeout 2_000_000 checkTcp'
   where
     checkTcp' =
       either (Left . formatErr) id <$> try do
