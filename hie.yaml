@@ -3,6 +3,6 @@ cradle:
     - path: "./src"
       component: "zdun:lib"
     - path: "./app"
-      component: "zdun:exe:zdun-exe"
+      component: "zdun:exe:zdun"
     - path: "./test"
       component: "zdun:test:zdun-test"

@@ -24,7 +24,7 @@ test:
       - /root/.cabal/packages/
 
 variables:
-  EXE_NAME: zdun-exe
+  EXE_NAME: zdun
 
 build:
   stage: build
