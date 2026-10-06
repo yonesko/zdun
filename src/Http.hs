@@ -1,54 +1,97 @@
 module Http
   ( checkHttp,
-    shortHttpError,
   )
 where
 
 import Control.Exception (IOException, displayException, fromException, try)
-import qualified Data.ByteString as BS
-import Data.List (isPrefixOf)
+import Control.Monad (forM_)
+import Control.Monad.Except (liftEither, runExceptT)
+import Control.Monad.IO.Class (liftIO)
+import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TE
+import GHC.IO.Exception (ioe_description)
 import Network.HTTP.Client
-  ( HttpException (HttpExceptionRequest, InvalidUrlException),
-    HttpExceptionContent (..),
-    Manager,
-    Request (method, responseTimeout),
-    Response (responseStatus),
+  ( BodyReader,
+    HttpException (..),
+    HttpExceptionContent
+      ( ConnectionClosed,
+        ConnectionFailure,
+        ConnectionTimeout,
+        InternalException,
+        InvalidHeader,
+        InvalidStatusLine,
+        NoResponseDataReceived,
+        ResponseTimeout,
+        StatusCodeException,
+        TlsNotSupported
+      ),
+    Request (responseTimeout),
+    Response (responseBody, responseStatus),
     brConsume,
     parseRequest,
-    responseBody,
     responseTimeoutMicro,
     withResponse,
   )
-import Network.HTTP.Types.Status (statusCode)
-import Probes (CheckResult (..), seconds)
-import Tcp (shortSocketError)
+import Network.HTTP.Types
+  ( Status (statusCode),
+    statusIsSuccessful,
+  )
 import Text.Regex.TDFA ((=~))
 import Text.Regex.TDFA.Text ()
+import Types
 
--- | Разбирает строку вида "regex@url" или просто "url".
-parseHttpTarget :: String -> (Maybe String, String)
-parseHttpTarget raw =
-  let (mRe, urlPart) = case break (== '@') raw of
-        (re, '@' : u) | not (null re) -> (Just re, u)
-        _ -> (Nothing, raw)
-      normalizedUrl
-        | "http://" `isPrefixOf` urlPart || "https://" `isPrefixOf` urlPart = urlPart
-        | otherwise = "http://" ++ urlPart
-   in (mRe, normalizedUrl)
+checkHttp :: Env -> String -> Maybe Check -> IO (Either String ())
+checkHttp env url check = do
+  res <- try $ do
+    initialReq <- parseRequest url
+    let request = initialReq {responseTimeout = responseTimeoutMicro (seconds 2)}
+    withResponse request (envManager env) $ \response -> runExceptT $ do
+      liftEither $ checkStatus response
+      forM_ check $ \c -> do
+        body <- liftIO $ readBody response
+        liftEither $ checkContent c body
+  pure $ either (Left . shortHttpError) id res
+  where
+    checkStatus :: Response a -> Either String ()
+    checkStatus resp
+      | statusIsSuccessful st = Right ()
+      | otherwise = Left $ "response status is not successful: " <> show (statusCode st)
+      where
+        st = responseStatus resp
+
+    checkContent :: Check -> T.Text -> Either String ()
+    checkContent (Contains substr) body
+      | T.pack substr `T.isInfixOf` body = Right ()
+      | otherwise = Left "response body doesn't contain substring"
+    checkContent (Matches re) body
+      | body =~ re = Right ()
+      | otherwise = Left "response body doesn't match re"
+
+    readBody :: Response BodyReader -> IO T.Text
+    readBody = fmap (TE.decodeUtf8With TE.lenientDecode . mconcat) . brConsume . responseBody
+
+seconds :: Int -> Int
+seconds n = n * 1000000
+
+-- | Extracts a concise, human-readable error description from an IOException.
+shortSocketError :: IOException -> String
+shortSocketError err =
+  case ioe_description err of
+    "" -> unwords . lines . displayException $ err
+    desc -> desc
 
 -- | Extracts a concise, single-line error description from an HttpException.
 shortHttpError :: HttpException -> String
-shortHttpError (InvalidUrlException _ reason) = "Invalid URL: " ++ reason
+shortHttpError (InvalidUrlException _ reason) = "Invalid URL: " <> reason
 shortHttpError (HttpExceptionRequest _ content) = case content of
-  StatusCodeException resp _ -> "HTTP status " ++ show (statusCode $ responseStatus resp)
+  StatusCodeException resp _ -> "HTTP status " <> show (statusCode $ responseStatus resp)
   ResponseTimeout -> "Response timeout"
   ConnectionTimeout -> "Connection timeout"
   ConnectionFailure e -> handleSomeException e
   ConnectionClosed -> "Connection closed"
-  InvalidStatusLine bs -> "Invalid status line: " ++ show bs
-  InvalidHeader bs -> "Invalid header: " ++ show bs
+  InvalidStatusLine bs -> "Invalid status line: " <> show bs
+  InvalidHeader bs -> "Invalid header: " <> show bs
   InternalException e -> handleSomeException e
   NoResponseDataReceived -> "No response data received"
   TlsNotSupported -> "TLS not supported"
@@ -57,40 +100,3 @@ shortHttpError (HttpExceptionRequest _ content) = case content of
     handleSomeException e = case fromException e of
       Just (ioe :: IOException) -> shortSocketError ioe
       Nothing -> unwords . lines . displayException $ e
-
--- | Единый метод для всех HTTP проверок:
--- 1. Если передано "url" — проверяет статус 200 OK (тело не читается).
--- 2. Если передано "regex@url" — проверяет статус 200 OK и совпадение всего тела ответа с регуляркой.
---
--- Принимает уже созданный Manager — его нужно создать один раз (через newManager) и переиспользовать,
--- чтобы избежать утечки файловых дескрипторов при повторных вызовах в workerLoop.
-checkHttp :: Manager -> String -> IO CheckResult
-checkHttp manager rawTarget = do
-  let (mRegex, url) = parseHttpTarget rawTarget
-
-  -- Ловим только сетевые/HTTP ошибки, НЕ перехватывая асинхронный Timeout и Ctrl+C!
-  mReq <- try (parseRequest url) :: IO (Either HttpException Request)
-  case mReq of
-    Left err -> pure $ Err (shortHttpError err)
-    Right initialReq -> do
-      let req =
-            initialReq
-              { method = "GET",
-                responseTimeout = responseTimeoutMicro (seconds 2)
-              }
-      res <-
-        try $
-          withResponse req manager $ \resp -> do
-            let code = statusCode $ responseStatus resp
-            if code /= 200
-              then pure $ Err $ "status " ++ show code ++ " (expected 200)"
-              else case mRegex of
-                Nothing -> pure Ok
-                Just regexPat -> do
-                  chunks <- brConsume $ responseBody resp
-                  let bodyText = TE.decodeUtf8With TE.lenientDecode (BS.concat chunks)
-                  if bodyText =~ regexPat
-                    then pure Ok
-                    else pure $ Err $ "body did not match regex: " ++ regexPat
-
-      pure $ either (Err . shortHttpError) id res
