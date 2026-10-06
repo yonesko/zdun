@@ -1,0 +1,14 @@
+# HLint configuration for zdun
+# https://github.com/ndmitchell/hlint
+
+# Enable colored output by default
+- arguments: [--color]
+
+# Warn on partial functions (head, tail, etc.)
+- group: {name: partial, enabled: true}
+
+# Suggest generalizing functions (fmap instead of map, <> instead of ++)
+- group: {name: generalise, enabled: true}
+
+# Ignore overly pedantic hints if needed
+- ignore: {name: "Use tuple-section"}
