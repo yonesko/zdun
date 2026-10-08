@@ -10,7 +10,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import GHC.IO.Exception (ioe_description)
 import Network.Socket
-  ( AddrInfo (AddrInfo, addrAddress, addrFamily, addrProtocol, addrSocketType),
+  ( AddrInfo (addrAddress, addrFamily, addrProtocol, addrSocketType),
     HostName,
     ServiceName,
     SocketType (Stream),
@@ -32,12 +32,15 @@ shortSocketError err =
     desc -> desc
 
 checkTcp :: HostName -> ServiceName -> Maybe Check -> IO (Either String ())
-checkTcp host port check =
-  let addrs = getAddrInfo (Just defaultHints {addrSocketType = Stream}) (Just host) (Just port)
-   in fromMaybe timeoutMsg <$> timeout 2_000_000 (either (Left . formatErr) id <$> try (addrs >>= run))
+checkTcp host port check = fromMaybe timeoutMsg <$> timeout 2_000_000 checkTcp'
   where
+    checkTcp' = do
+      res <- try $ getAddrInfo (Just defaultHints {addrSocketType = Stream}) (Just host) (Just port)
+      either (pure . Left . formatErr) run res
+
     run [] = pure (Left "Empty address list")
-    run (a : as) = withAddr a >>= either (\err -> if null as then pure (Left err) else run as) (pure . Right)
+    run [a] = withAddr a
+    run (a : as) = withAddr a >>= either (\_ -> run as) (pure . Right)
 
     withAddr addr =
       either (Left . formatErr) id
