@@ -5,13 +5,12 @@ where
 
 import Control.Exception (IOException, bracket, displayException, try)
 import qualified Data.ByteString as BS
-import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import GHC.IO.Exception (ioe_description)
 import Network.Socket
-  ( AddrInfo (addrAddress, addrFamily, addrProtocol, addrSocketType),
+  ( AddrInfo (AddrInfo, addrAddress, addrFamily, addrProtocol, addrSocketType),
     HostName,
     ServiceName,
     SocketType (Stream),
@@ -33,17 +32,23 @@ shortSocketError err =
     desc -> desc
 
 checkTcp :: HostName -> ServiceName -> Maybe Check -> IO (Either String ())
-checkTcp host port check = fromMaybe timeoutMsg <$> timeout 2_000_000 checkTcp'
+checkTcp host port check =
+  let addrs = getAddrInfo (Just defaultHints {addrSocketType = Stream}) (Just host) (Just port)
+   in fromMaybe timeoutMsg <$> timeout 2_000_000 (either (Left . formatErr) id <$> try (addrs >>= run))
   where
-    checkTcp' =
-      either (Left . formatErr) id <$> try do
-        addr <- NE.head <$> getAddrInfo (Just defaultHints {addrSocketType = Stream}) (Just host) (Just port)
-        bracket
-          (socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr))
-          close
-          ( \sock -> do
-              connect sock (addrAddress addr)
-              maybe (pure $ Right ()) (\c -> (`checkBody` c) <$> recv sock 4096) check
+    run [] = pure (Left "Empty address list")
+    run (a : as) = withAddr a >>= either (\err -> if null as then pure (Left err) else run as) (pure . Right)
+
+    withAddr addr =
+      either (Left . formatErr) id
+        <$> try
+          ( bracket
+              (socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr))
+              close
+              ( \sock -> do
+                  connect sock (addrAddress addr)
+                  maybe (pure $ Right ()) (\c -> (`checkBody` c) <$> recv sock 4096) check
+              )
           )
 
     checkBody body (Contains substr) = if (TE.encodeUtf8 . T.pack) substr `BS.isInfixOf` body then Right () else Left "response body doesn't contain substring"
