@@ -23,10 +23,12 @@ import Data.Time.Clock (NominalDiffTime)
 import Data.Time.Format (defaultTimeLocale, formatTime)
 import Data.Time.LocalTime (getZonedTime)
 import Data.Version (showVersion)
+import Data.Default.Class (def)
 import GHC.Exception.Type (displayException)
 import GHC.IO.Exception (ioe_description)
+import Network.Connection (TLSSettings (TLSSettingsSimple))
 import Network.HTTP.Client (newManager)
-import Network.HTTP.Client.TLS (tlsManagerSettings)
+import Network.HTTP.Client.TLS (mkManagerSettings, tlsManagerSettings)
 import qualified Options.Applicative as OA
 import qualified Options.Applicative.Help.Pretty as P
 import Paths_zdun (version)
@@ -68,6 +70,7 @@ parseDuration s =
 data Options = Options
   { optTimeout :: NominalDiffTime,
     optVerbose :: Bool,
+    optInsecure :: Bool,
     optProbes :: [Probe],
     optRest :: [String]
   }
@@ -136,6 +139,7 @@ opts =
           <> OA.help "Timeout"
       )
     <*> OA.switch (OA.short 'v' <> OA.long "verbose" <> OA.help "Verbose")
+    <*> OA.switch (OA.short 'k' <> OA.long "insecure" <> OA.help "Allow insecure server connections when using SSL/TLS")
     <*> many
       ( OA.option
           (OA.eitherReader parseProbe)
@@ -162,7 +166,10 @@ runWithOptions options =
       hPutStrLn stderr "[zdun] command after -- is not specified"
       pure $ Left $ ExitFailure 1
     cmd : args -> do
-      manager <- newManager tlsManagerSettings
+      let tlsSettings
+            | optInsecure options = mkManagerSettings (TLSSettingsSimple True False True def) Nothing
+            | otherwise = tlsManagerSettings
+      manager <- newManager tlsSettings
       logLock <- newMVar ()
       let logMsg msg = when (optVerbose options) $ withMVar logLock $ const $ printLog msg
       let env = Env {envManager = manager, envLogger = logMsg}

@@ -1,5 +1,5 @@
 name: zdun
-version: 2.0.0
+version: 2.1.0
 github: "githubuser/zdun"
 license: BSD-3-Clause
 author: "Author name here"
@@ -53,6 +53,8 @@ library:
     - text
     - optparse-applicative
     - unix
+    - crypton-connection
+    - data-default-class
 
 executables:
   zdun:
@@ -82,5 +84,6 @@ tests:
       - text
       - http-client
       - http-client-tls
+      - optparse-applicative
     build-tools:
       - hspec-discover

@@ -5,7 +5,7 @@ cabal-version: 2.2
 -- see: https://github.com/sol/hpack
 
 name:           zdun
-version:        2.0.0
+version:        2.1.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/zdun#readme>
 homepage:       https://github.com/githubuser/zdun#readme
 bug-reports:    https://github.com/githubuser/zdun/issues
@@ -46,6 +46,8 @@ library
       async
     , base >=4.7 && <5
     , bytestring
+    , crypton-connection
+    , data-default-class
     , http-client
     , http-client-tls
     , http-types
@@ -106,6 +108,7 @@ test-suite zdun-test
     , http-client
     , http-client-tls
     , network
+    , optparse-applicative
     , text
     , time
     , zdun

@@ -1,9 +1,11 @@
 module LibSpec (spec) where
 
-import Lib (parseDuration)
+import Lib (Options (..), cliPrefs, optsInfo, parseDuration)
+import qualified Options.Applicative as OA
 import Test.Hspec
   ( Spec,
     describe,
+    expectationFailure,
     it,
     shouldBe,
   )
@@ -46,3 +48,20 @@ spec = do
 
     it "parses milliseconds" $
       parseDuration "500ms" `shouldBe` Right 0.5
+
+  describe "CLI options parser" $ do
+    it "defaults optInsecure to False" $ do
+      case OA.execParserPure cliPrefs optsInfo ["-p", "tcp://host:80", "--", "echo", "hi"] of
+        OA.Success opts -> optInsecure opts `shouldBe` False
+        _ -> expectationFailure "expected parse success"
+
+    it "parses -k flag" $ do
+      case OA.execParserPure cliPrefs optsInfo ["-k", "-p", "tcp://host:80", "--", "echo", "hi"] of
+        OA.Success opts -> optInsecure opts `shouldBe` True
+        _ -> expectationFailure "expected parse success"
+
+    it "parses --insecure flag" $ do
+      case OA.execParserPure cliPrefs optsInfo ["--insecure", "-p", "tcp://host:80", "--", "echo", "hi"] of
+        OA.Success opts -> optInsecure opts `shouldBe` True
+        _ -> expectationFailure "expected parse success"
+
